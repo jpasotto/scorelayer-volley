@@ -9,73 +9,12 @@
 <title>ScoreLayer Volley</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<style>html, body { margin: 0; padding: 0; background: #0a0e14; }</style>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState, useRef, useCallback } = React;
-
-
-const FONT_URL = "https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap";
-
-// --- Constants ---
-const POINTS_TO_WIN_SET = 25;
-const POINTS_TO_WIN_TIEBREAK = 15;
-const SETS_TO_WIN_MATCH = 3;
-const MIN_LEAD = 2;
-
-// --- Helpers ---
-function formatSRTTime(ms) {
-  if (ms < 0) ms = 0;
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const mil = ms % 1000;
-  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "," + String(mil).padStart(3, "0");
-}
-
-function formatClockTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function isTiebreakSet(setsA, setsB) {
-  return setsA === SETS_TO_WIN_MATCH - 1 && setsB === SETS_TO_WIN_MATCH - 1;
-}
-
-function getTargetPoints(setsA, setsB) {
-  return isTiebreakSet(setsA, setsB) ? POINTS_TO_WIN_TIEBREAK : POINTS_TO_WIN_SET;
-}
-
-function isSetWon(pA, pB, target) {
-  return (pA >= target || pB >= target) && Math.abs(pA - pB) >= MIN_LEAD;
-}
-
-function createInitialState() {
-  return {
-    teamA: "Home",
-    teamB: "Away",
-    setsA: 0,
-    setsB: 0,
-    pointsA: 0,
-    pointsB: 0,
-    setHistory: [],
-    pointLog: [],
-    matchStarted: false,
-    matchOver: false,
-    syncTimestamp: null,
-    currentSet: 1,
-  };
-}
-
-const SCREEN = { SETUP: "setup", MATCH: "match" };
-
-const styles = `
-  @import url('${FONT_URL}');
+<style>
+html, body { margin: 0; padding: 0; background: #0a0e14; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #0a0e14; --surface: #141a23; --surface2: #1c2530;
@@ -167,7 +106,65 @@ const styles = `
   .confirm-dialog p { font-size: 14px; color: var(--text-dim); font-weight: 400; line-height: 1.5; }
   .confirm-actions { display: flex; gap: 10px; }
   .confirm-actions .btn { flex: 1; }
-`;
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useCallback } = React;
+
+// --- Constants ---
+const POINTS_TO_WIN_SET = 25;
+const POINTS_TO_WIN_TIEBREAK = 15;
+const SETS_TO_WIN_MATCH = 3;
+const MIN_LEAD = 2;
+
+// --- Helpers ---
+function formatSRTTime(ms) {
+  if (ms < 0) ms = 0;
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  const mil = ms % 1000;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "," + String(mil).padStart(3, "0");
+}
+
+function formatClockTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function isTiebreakSet(setsA, setsB) {
+  return setsA === SETS_TO_WIN_MATCH - 1 && setsB === SETS_TO_WIN_MATCH - 1;
+}
+
+function getTargetPoints(setsA, setsB) {
+  return isTiebreakSet(setsA, setsB) ? POINTS_TO_WIN_TIEBREAK : POINTS_TO_WIN_SET;
+}
+
+function isSetWon(pA, pB, target) {
+  return (pA >= target || pB >= target) && Math.abs(pA - pB) >= MIN_LEAD;
+}
+
+function createInitialState() {
+  return {
+    teamA: "Home",
+    teamB: "Away",
+    setsA: 0,
+    setsB: 0,
+    pointsA: 0,
+    pointsB: 0,
+    setHistory: [],
+    pointLog: [],
+    matchStarted: false,
+    matchOver: false,
+    syncTimestamp: null,
+    currentSet: 1,
+  };
+}
+
+const SCREEN = { SETUP: "setup", MATCH: "match" };
+
 
 // --- Generators ---
 function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
@@ -700,12 +697,6 @@ function VolleyballTracker() {
   const [exportModal, setExportModal] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
 
-  const styleRef = useRef(null);
-  if (!styleRef.current) {
-    const el = document.createElement("style");
-    el.textContent = styles;
-    document.head.appendChild(el);
-    styleRef.current = el;
   }
 
   const startMatch = useCallback(() => {
