@@ -860,7 +860,11 @@ function VolleyballTracker() {
     var blob = new Blob([zipBytes], { type: "application/zip" });
     var zipFilename = fname + "_chroma_kit.zip";
 
-    if (navigator.share && navigator.canShare) {
+    // Web Share API: iOS Safari only.
+    // Mac Safari also supports navigator.share() with files but triggers
+    // BOTH the share sheet AND a background download → duplicate file bug.
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (isIOS && navigator.share && navigator.canShare) {
       var file = new File([blob], zipFilename, { type: "application/zip" });
       if (navigator.canShare({ files: [file] })) {
         navigator.share({
@@ -875,6 +879,7 @@ function VolleyballTracker() {
       }
     }
 
+    // Desktop (Mac Safari, Chrome, Firefox) → direct blob download.
     blobDownloadFallback(blob, zipFilename);
   }
 
