@@ -106,6 +106,12 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .confirm-dialog p { font-size: 14px; color: var(--text-dim); font-weight: 400; line-height: 1.5; }
   .confirm-actions { display: flex; gap: 10px; }
   .confirm-actions .btn { flex: 1; }
+  .title-input-wrap { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 6px; }
+  .title-input-wrap label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
+  .title-input-wrap input { background: var(--surface); border: 1px solid var(--surface2); border-radius: 8px; padding: 12px 14px; font-family: var(--font-display); font-size: 16px; font-weight: 500; color: var(--text); outline: none; transition: border-color 0.2s; -webkit-user-select: text; user-select: text; }
+  .title-input-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .title-input-wrap input::placeholder { color: var(--text-dim); }
+  .title-input-wrap .hint { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
 </style>
 </head>
 <body>
@@ -148,6 +154,7 @@ function createInitialState() {
   return {
     teamA: "Home",
     teamB: "Away",
+    matchTitle: "",
     setsA: 0,
     setsB: 0,
     pointsA: 0,
@@ -233,7 +240,9 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
   ].join("\n");
 }
 
-// --- ASS subtitle format (styled, for FFmpeg burn-in) ---
+// --- ASS subtitle format ---
+// Info row layout: [matchTitle left] [Set N center] [Sets A:B right]
+// Uses \pos() + \an override tags for precise left/center/right placement.
 function formatASSTime(ms) {
   if (ms < 0) ms = 0;
   var h = Math.floor(ms / 3600000);
@@ -243,8 +252,9 @@ function formatASSTime(ms) {
   return String(h) + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "." + String(cs).padStart(2, "0");
 }
 
-function generateASS(pointLog, syncTimestamp, teamA, teamB) {
+function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
   if (!syncTimestamp || pointLog.length === 0) return "";
+  var title = (matchTitle || "").trim();
   var header = [
     "[Script Info]",
     "Title: Volleyball Score Overlay",
@@ -255,12 +265,15 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB) {
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    // Score: large, bold, bottom-center (Alignment=2)
     "Style: Score,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,3,2,2,40,40,50,1",
-    "Style: SetInfo,Arial,36,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,2,1,2,40,40,120,1",
+    // SetInfo: same size/colour as in the original, bottom-center default but overridden with \an+\pos per dialogue
+    "Style: SetInfo,Arial,36,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,2,1,2,40,40,50,1",
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
   ].join("\n");
+
   var events = [];
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
@@ -269,21 +282,35 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB) {
     if (startMs < 0) continue;
     var startT = formatASSTime(startMs);
     var endT = formatASSTime(endMs);
+
+    // Bottom score line — large, centered
     var scoreText = teamA + "  " + p.pointsA + "  -  " + p.pointsB + "  " + teamB;
-    var setText = "Set " + p.setNum;
     events.push("Dialogue: 0," + startT + "," + endT + ",Score,,0,0,0,," + scoreText);
-    events.push("Dialogue: 1," + startT + "," + endT + ",SetInfo,,0,0,0,," + setText);
+
+    // Info row — three positioned elements on same Y level (y=900, i.e. 130px above score baseline)
+    // \an1 = bottom-left anchor, \an2 = bottom-center, \an3 = bottom-right
+    var centerText = "Set " + p.setNum;
+    var rightText = "Sets " + p.setsA + ":" + p.setsB;
+
+    if (title) {
+      events.push("Dialogue: 1," + startT + "," + endT + ",SetInfo,,0,0,0,,{\\an1\\pos(80,900)}" + title);
+    }
+    events.push("Dialogue: 1," + startT + "," + endT + ",SetInfo,,0,0,0,,{\\an2\\pos(960,900)}" + centerText);
+    events.push("Dialogue: 1," + startT + "," + endT + ",SetInfo,,0,0,0,,{\\an3\\pos(1840,900)}" + rightText);
   }
   return header + "\n" + events.join("\n") + "\n";
 }
 
-function generateChromaScript(pointLog, syncTimestamp, teamA, teamB) {
+// --- Chroma Key shell script + Python frame renderer ---
+// Info row rendered in Python: title at x=80 (left), Set N centered, Sets A:B at x=WIDTH-80 (right)
+function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
   if (!syncTimestamp || pointLog.length === 0) return "";
+  var title = (matchTitle || "").trim();
   var lastEntry = pointLog[pointLog.length - 1];
   var totalSec = Math.ceil((lastEntry.timestamp - syncTimestamp + 10000) / 1000);
   var fname = "volleyball_" + teamA + "_vs_" + teamB;
 
-  // Build JSON data for the Python script
+  // Build JSON data for the Python script — includes title and sets_score per entry
   var entries = [];
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
@@ -296,7 +323,9 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB) {
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
       score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: "Set " + p.setNum
+      set_info: "Set " + p.setNum,
+      title: title,
+      sets_score: "Sets " + p.setsA + ":" + p.setsB
     });
   }
 
@@ -409,11 +438,8 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB) {
     "            break",
     "",
     "    if active:",
-    "        # Draw score text (centered, near bottom)",
+    "        # ── Score line (large, centered near bottom) ──",
     "        score_text = active['score']",
-    "        set_text = active['set_info']",
-    "",
-    "        # Score: draw shadow then white",
     "        bbox = draw.textbbox((0, 0), score_text, font=font_score)",
     "        tw = bbox[2] - bbox[0]",
     "        sx = (WIDTH - tw) // 2",
@@ -423,15 +449,37 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB) {
     "                draw.text((sx + dx, sy + dy), score_text, font=font_score, fill=BLACK)",
     "        draw.text((sx, sy), score_text, font=font_score, fill=WHITE)",
     "",
-    "        # Set info: above score",
+    "        # ── Info row: [title left]  [Set N center]  [Sets A:B right] ──",
+    "        sy2 = HEIGHT - 180",
+    "",
+    "        # Center: Set N",
+    "        set_text = active['set_info']",
     "        bbox2 = draw.textbbox((0, 0), set_text, font=font_set)",
     "        tw2 = bbox2[2] - bbox2[0]",
     "        sx2 = (WIDTH - tw2) // 2",
-    "        sy2 = HEIGHT - 180",
     "        for dx in range(-2, 3):",
     "            for dy in range(-2, 3):",
     "                draw.text((sx2 + dx, sy2 + dy), set_text, font=font_set, fill=BLACK)",
     "        draw.text((sx2, sy2), set_text, font=font_set, fill=CYAN)",
+    "",
+    "        # Left: match title (optional)",
+    "        title_text = active.get('title', '')",
+    "        if title_text:",
+    "            for dx in range(-2, 3):",
+    "                for dy in range(-2, 3):",
+    "                    draw.text((80 + dx, sy2 + dy), title_text, font=font_set, fill=BLACK)",
+    "            draw.text((80, sy2), title_text, font=font_set, fill=CYAN)",
+    "",
+    "        # Right: Sets score",
+    "        sets_text = active.get('sets_score', '')",
+    "        if sets_text:",
+    "            bbox3 = draw.textbbox((0, 0), sets_text, font=font_set)",
+    "            tw3 = bbox3[2] - bbox3[0]",
+    "            sx3 = WIDTH - 80 - tw3",
+    "            for dx in range(-2, 3):",
+    "                for dy in range(-2, 3):",
+    "                    draw.text((sx3 + dx, sy2 + dy), sets_text, font=font_set, fill=BLACK)",
+    "            draw.text((sx3, sy2), sets_text, font=font_set, fill=CYAN)",
     "",
     '    img.save(os.path.join(FRAMES_DIR, f"frame_{frame_num:06d}.png"))',
     "",
@@ -575,14 +623,13 @@ function generateReadme(teamA, teamB) {
     "   that same moment in your match recording.",
     "",
     "",
-    "Generated by Volley Track",
+    "Generated by ScoreLayer Volley",
     ""
   ].join("\n");
 }
 
-// --- Minimal ZIP builder (store-only, no compression — fine for text) ---
+// --- Minimal ZIP builder (store-only, no compression) ---
 function buildZip(files) {
-  // files: [{name: string, content: string}]
   var te = new TextEncoder();
   var centralDir = [];
   var localParts = [];
@@ -593,44 +640,42 @@ function buildZip(files) {
     var dataBytes = te.encode(files[i].content);
     var crc = crc32(dataBytes);
 
-    // Local file header
     var local = new Uint8Array(30 + nameBytes.length + dataBytes.length);
     var dv = new DataView(local.buffer);
-    dv.setUint32(0, 0x04034b50, true); // signature
-    dv.setUint16(4, 20, true); // version needed
-    dv.setUint16(6, 0, true); // flags
-    dv.setUint16(8, 0, true); // compression: store
-    dv.setUint16(10, 0, true); // mod time
-    dv.setUint16(12, 0, true); // mod date
-    dv.setUint32(14, crc, true); // crc32
-    dv.setUint32(18, dataBytes.length, true); // compressed size
-    dv.setUint32(22, dataBytes.length, true); // uncompressed size
-    dv.setUint16(26, nameBytes.length, true); // filename length
-    dv.setUint16(28, 0, true); // extra field length
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 0, true);
+    dv.setUint16(8, 0, true);
+    dv.setUint16(10, 0, true);
+    dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, dataBytes.length, true);
+    dv.setUint32(22, dataBytes.length, true);
+    dv.setUint16(26, nameBytes.length, true);
+    dv.setUint16(28, 0, true);
     local.set(nameBytes, 30);
     local.set(dataBytes, 30 + nameBytes.length);
     localParts.push(local);
 
-    // Central directory entry
     var cent = new Uint8Array(46 + nameBytes.length);
     var cdv = new DataView(cent.buffer);
-    cdv.setUint32(0, 0x02014b50, true); // signature
-    cdv.setUint16(4, 20, true); // version made by
-    cdv.setUint16(6, 20, true); // version needed
-    cdv.setUint16(8, 0, true); // flags
-    cdv.setUint16(10, 0, true); // compression
-    cdv.setUint16(12, 0, true); // mod time
-    cdv.setUint16(14, 0, true); // mod date
+    cdv.setUint32(0, 0x02014b50, true);
+    cdv.setUint16(4, 20, true);
+    cdv.setUint16(6, 20, true);
+    cdv.setUint16(8, 0, true);
+    cdv.setUint16(10, 0, true);
+    cdv.setUint16(12, 0, true);
+    cdv.setUint16(14, 0, true);
     cdv.setUint32(16, crc, true);
     cdv.setUint32(20, dataBytes.length, true);
     cdv.setUint32(24, dataBytes.length, true);
     cdv.setUint16(28, nameBytes.length, true);
-    cdv.setUint16(30, 0, true); // extra field length
-    cdv.setUint16(32, 0, true); // comment length
-    cdv.setUint16(34, 0, true); // disk number
-    cdv.setUint16(36, 0, true); // internal attrs
-    cdv.setUint32(38, 0, true); // external attrs
-    cdv.setUint32(42, offset, true); // local header offset
+    cdv.setUint16(30, 0, true);
+    cdv.setUint16(32, 0, true);
+    cdv.setUint16(34, 0, true);
+    cdv.setUint16(36, 0, true);
+    cdv.setUint32(38, 0, true);
+    cdv.setUint32(42, offset, true);
     cent.set(nameBytes, 46);
     centralDir.push(cent);
 
@@ -639,7 +684,6 @@ function buildZip(files) {
 
   var centralSize = centralDir.reduce(function(a, b) { return a + b.length; }, 0);
 
-  // End of central directory
   var eocd = new Uint8Array(22);
   var edv = new DataView(eocd.buffer);
   edv.setUint32(0, 0x06054b50, true);
@@ -777,7 +821,7 @@ function VolleyballTracker() {
   // --- Export ---
   function openExport(type) {
     var content = "";
-    var fname = "volleyball_" + state.teamA + "_vs_" + state.teamB;
+    var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB;
     if (type === "srt") {
       content = generateSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
       fname += ".srt";
@@ -787,11 +831,11 @@ function VolleyballTracker() {
       fname += ".fcpxml";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "ass") {
-      content = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname += ".ass";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "chroma") {
-      content = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname = "generate_overlay.sh";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else {
@@ -803,11 +847,11 @@ function VolleyballTracker() {
   }
 
   function downloadChromaKit() {
-    var ass = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
-    var sh = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+    var ass = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+    var sh = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     var readme = generateReadme(state.teamA, state.teamB);
     if (!ass || !sh) { window.alert("No sync point set or no points recorded."); return; }
-    var fname = "volleyball_" + state.teamA + "_vs_" + state.teamB;
+    var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB;
     var zipBytes = buildZip([
       { name: fname + ".ass", content: ass },
       { name: "generate_overlay.sh", content: sh },
@@ -816,15 +860,13 @@ function VolleyballTracker() {
     var blob = new Blob([zipBytes], { type: "application/zip" });
     var zipFilename = fname + "_chroma_kit.zip";
 
-    // Strategy 1: Web Share API (best for iOS Safari)
     if (navigator.share && navigator.canShare) {
       var file = new File([blob], zipFilename, { type: "application/zip" });
       if (navigator.canShare({ files: [file] })) {
         navigator.share({
-          title: "Volleyball Chroma Kit",
+          title: "ScoreLayer Chroma Kit",
           files: [file]
         }).catch(function(err) {
-          // User cancelled share or error — try fallback
           if (err.name !== "AbortError") {
             blobDownloadFallback(blob, zipFilename);
           }
@@ -833,7 +875,6 @@ function VolleyballTracker() {
       }
     }
 
-    // Strategy 2: Standard blob download (desktop browsers)
     blobDownloadFallback(blob, zipFilename);
   }
 
@@ -849,7 +890,6 @@ function VolleyballTracker() {
       document.body.removeChild(a);
       setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
     } catch (e) {
-      // Strategy 3: FileReader base64 data URI (last resort)
       var reader = new FileReader();
       reader.onload = function() {
         var w = window.open(reader.result, "_blank");
@@ -1019,21 +1059,37 @@ function VolleyballTracker() {
           <div className="set-details">
             {state.setHistory.map(function(sh, i) { return <div key={i}>Set {i + 1}: {sh.scoreA}–{sh.scoreB}</div>; })}
           </div>
+
           {!state.syncTimestamp && (
             <div className="format-info" style={{ maxWidth: 300, textAlign: "center" }}>
               No sync point was set. SRT/FCPXML exports require sync. CSV with wall-clock timestamps is still available.
             </div>
           )}
+
           <div className="export-buttons">
             <button className="btn btn-primary" onClick={function() { openExport("srt"); }} disabled={!state.syncTimestamp}>Export SRT (Subtitles)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("fcpxml"); }} disabled={!state.syncTimestamp}>Export FCPXML (Final Cut)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("csv"); }}>Export CSV (Raw Data)</button>
+
             <div style={{ width: "100%", borderTop: "1px solid var(--surface2)", margin: "6px 0", paddingTop: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", color: "var(--accent)", textAlign: "center", marginBottom: 8 }}>Chroma Key Video</div>
             </div>
+
+            {/* Match title field — applied to the overlay info row */}
+            <div className="title-input-wrap">
+              <label>Overlay Title</label>
+              <input
+                type="text"
+                value={state.matchTitle}
+                placeholder="e.g. U14 Girls League"
+                onChange={function(e) { var v = e.target.value; setState(function(s) { return { ...s, matchTitle: v }; }); }}
+              />
+              <span className="hint">Shown left of Set # in the overlay. Leave blank to omit.</span>
+            </div>
+
             <button className="btn btn-primary" style={{ background: "#16a34a", boxShadow: "0 4px 20px rgba(22,163,74,0.3)" }} onClick={downloadChromaKit} disabled={!state.syncTimestamp}>Download Chroma Kit (.zip)</button>
             <div className="format-info" style={{ fontSize: 11, textAlign: "center" }}>
-              Downloads a ZIP with .ass subtitles, FFmpeg script, and README with instructions for Mac and Windows.
+              Downloads a ZIP with .ass subtitles, FFmpeg script, and README. Overlay info row: <strong>[Title] · Set N · Sets A:B</strong>
             </div>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button className="btn btn-small" style={{ flex: 1 }} onClick={function() { openExport("ass"); }} disabled={!state.syncTimestamp}>View ASS</button>
