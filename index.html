@@ -697,14 +697,6 @@ function VolleyballTracker() {
   const [exportModal, setExportModal] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
 
-  const styleRef = useRef(null);
-  if (!styleRef.current) {
-    const el = document.createElement("style");
-    el.textContent = styles;
-    document.head.appendChild(el);
-    styleRef.current = el;
-  }
-
   const startMatch = useCallback(() => {
     setState(function(s) { return { ...s, matchStarted: true, teamA: s.teamA.trim() || "Home", teamB: s.teamB.trim() || "Away" }; });
     setScreen(SCREEN.MATCH);
