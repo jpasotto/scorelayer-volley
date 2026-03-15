@@ -824,13 +824,28 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
     output: function(chunk, meta) { muxer.addVideoChunk(chunk, meta); },
     error: function(e) { encoderError = e; console.error("VideoEncoder:", e); }
   });
-  encoder.configure({
-    codec: 'avc1.42E01F',
+  // avc1.4D4028 = H.264 Main Profile Level 4.0, required for 1920x1080 @ 30fps.
+  // The previous avc1.42E01F (Baseline Level 3.1) only supports up to 1280x720
+  // and caused "Encoding task failed" on iOS Safari's strict hardware encoder.
+  var baseConfig = {
+    codec: 'avc1.4D4028',
     width: WIDTH,
     height: HEIGHT,
     bitrate: 8000000,
     latencyMode: 'quality',
-  });
+  };
+  if (typeof VideoEncoder.isConfigSupported === 'function') {
+    var support = await VideoEncoder.isConfigSupported(baseConfig);
+    if (!support.supported) {
+      // Fallback: try without latencyMode hint (older Safari/iOS versions)
+      delete baseConfig.latencyMode;
+      var support2 = await VideoEncoder.isConfigSupported(baseConfig);
+      if (!support2.supported) {
+        throw new Error("H.264 encoding at 1920×1080 is not supported in this browser. Use the Chroma Kit (.zip) fallback instead.");
+      }
+    }
+  }
+  encoder.configure(baseConfig);
 
   var hasBlank = entries[0].start > 0;
   var total = entries.length + (hasBlank ? 1 : 0);
@@ -867,6 +882,7 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
   }
 
   await encoder.flush();
+  if (encoderError) throw encoderError;
   muxer.finalize();
   return target.buffer;
 }
