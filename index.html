@@ -732,23 +732,36 @@ function buildZip(files) {
 
 // Renders one frame onto a 2D canvas context.
 // entry = null → blank green frame (used for the pre-match gap).
-function renderOverlayFrame(ctx, entry, width, height) {
+// positionTop = true → text at top of frame; false → bottom (legacy).
+function renderOverlayFrame(ctx, entry, width, height, positionTop) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#00ff00';
   ctx.fillRect(0, 0, width, height);
   if (!entry) return;
 
-  ctx.textBaseline = 'bottom';
   ctx.shadowColor = '#000000';
 
-  // Score: white, bold 72px, centered, near bottom
+  var scoreY, infoY;
+  if (positionTop !== false) {
+    // Top layout: info row first, score below it
+    ctx.textBaseline = 'top';
+    infoY  = 50;
+    scoreY = 50 + 36 + 14; // info height + gap
+  } else {
+    // Bottom layout (original): score near bottom, info row above it
+    ctx.textBaseline = 'bottom';
+    scoreY = height - 60;
+    infoY  = height - 145;
+  }
+
+  // Score: white, bold 72px, centered
   ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.shadowBlur = 8;
   ctx.shadowOffsetX = 3;
   ctx.shadowOffsetY = 3;
-  ctx.fillText(entry.score, width / 2, height - 60);
+  ctx.fillText(entry.score, width / 2, scoreY);
 
   // Info row: cyan, bold 36px — [title left] [Set N center] [Sets A:B right]
   ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
@@ -758,15 +771,15 @@ function renderOverlayFrame(ctx, entry, width, height) {
   ctx.shadowOffsetY = 2;
 
   ctx.textAlign = 'center';
-  ctx.fillText(entry.set_info, width / 2, height - 145);
+  ctx.fillText(entry.set_info, width / 2, infoY);
 
   if (entry.title) {
     ctx.textAlign = 'left';
-    ctx.fillText(entry.title, 80, height - 145);
+    ctx.fillText(entry.title, 80, infoY);
   }
   if (entry.sets_score) {
     ctx.textAlign = 'right';
-    ctx.fillText(entry.sets_score, width - 80, height - 145);
+    ctx.fillText(entry.sets_score, width - 80, infoY);
   }
 
   ctx.shadowColor = 'transparent';
@@ -779,7 +792,7 @@ function renderOverlayFrame(ctx, entry, width, height) {
 // Uses VFR: one VideoFrame per score change (~100-200 frames total).
 // onProgress(0-100) is called as frames are submitted.
 // Returns a Promise that resolves to an ArrayBuffer containing the MP4 file.
-async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTitle, onProgress) {
+async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTitle, onProgress, positionTop) {
   if (!syncTimestamp || pointLog.length === 0) throw new Error("No sync point or no points recorded.");
   var Mp4Muxer = window.Mp4Muxer;
   if (!Mp4Muxer) throw new Error("MP4 muxer not loaded. Please refresh and try again.");
@@ -859,7 +872,7 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
   // than HTMLCanvasElement→VideoFrame, and the await naturally yields to the
   // event loop so encoder errors surface immediately.
   if (hasBlank) {
-    renderOverlayFrame(ctx, null, WIDTH, HEIGHT);
+    renderOverlayFrame(ctx, null, WIDTH, HEIGHT, positionTop);
     var blankBitmap = await createImageBitmap(canvas);
     var blankEndUs = Math.round(entries[0].start * 1000000);
     var bts = 0, blankKey = true;
@@ -883,7 +896,7 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
   for (var j = 0; j < entries.length; j++) {
     if (encoderError) throw encoderError;
     var e = entries[j];
-    renderOverlayFrame(ctx, e, WIDTH, HEIGHT);
+    renderOverlayFrame(ctx, e, WIDTH, HEIGHT, positionTop);
     var entryBitmap = await createImageBitmap(canvas);
     var ets = Math.round(e.start * 1000000);
     var ete = Math.round(e.end * 1000000);
@@ -939,6 +952,7 @@ function VolleyballTracker() {
   const [copyFeedback, setCopyFeedback] = useState("");
   const [isEncoding, setIsEncoding] = useState(false);
   const [encodeProgress, setEncodeProgress] = useState(0);
+  const [overlayPositionTop, setOverlayPositionTop] = useState(true);
 
   const startMatch = useCallback(() => {
     setState(function(s) { return { ...s, matchStarted: true, teamA: s.teamA.trim() || "Home", teamB: s.teamB.trim() || "Away" }; });
@@ -1119,7 +1133,8 @@ function VolleyballTracker() {
     try {
       var mp4Buffer = await generateOverlayMP4(
         state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle,
-        function(pct) { setEncodeProgress(pct); }
+        function(pct) { setEncodeProgress(pct); },
+        overlayPositionTop
       );
       setIsEncoding(false);
       var blob = new Blob([mp4Buffer], { type: 'video/mp4' });
@@ -1329,6 +1344,13 @@ function VolleyballTracker() {
               <span className="hint">Shown left of Set # in the overlay. Leave blank to omit.</span>
             </div>
 
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+              <span style={{ fontSize: 11, letterSpacing: 1, color: "var(--muted)", textTransform: "uppercase" }}>Subtitle Position</span>
+              <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--surface2)" }}>
+                <button onClick={function() { setOverlayPositionTop(true); }} disabled={isEncoding} style={{ padding: "4px 14px", border: "none", cursor: "pointer", fontSize: 12, background: overlayPositionTop ? "#16a34a" : "var(--surface2)", color: overlayPositionTop ? "#fff" : "var(--muted)" }}>↑ Top</button>
+                <button onClick={function() { setOverlayPositionTop(false); }} disabled={isEncoding} style={{ padding: "4px 14px", border: "none", cursor: "pointer", fontSize: 12, background: !overlayPositionTop ? "#16a34a" : "var(--surface2)", color: !overlayPositionTop ? "#fff" : "var(--muted)" }}>↓ Bottom</button>
+              </div>
+            </div>
             <button className="btn btn-primary" style={{ background: "#16a34a", boxShadow: "0 4px 20px rgba(22,163,74,0.3)" }} onClick={handleGenerateMP4} disabled={!state.syncTimestamp || isEncoding}>
               {isEncoding ? "Generating\u2026 " + encodeProgress + "%" : "Generate Overlay MP4"}
             </button>
