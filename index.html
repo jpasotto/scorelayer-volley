@@ -810,7 +810,9 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
   var canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
-  var ctx = canvas.getContext("2d");
+  // alpha: false → opaque backing store; H.264 has no alpha channel and iOS
+  // VideoToolbox can reject VideoFrames created from RGBA canvas data.
+  var ctx = canvas.getContext("2d", { alpha: false });
 
   var target = new Mp4Muxer.ArrayBufferTarget();
   var muxer = new Mp4Muxer.Muxer({
@@ -851,43 +853,52 @@ async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTi
   var total = entries.length + (hasBlank ? 1 : 0);
   var done = 0;
 
-  // Blank green frame(s) covering the gap before the first score event
+  // Blank green frame(s) covering the gap before the first score event.
+  // createImageBitmap() is used instead of passing the canvas directly to
+  // VideoFrame: Safari's WebKit handles ImageBitmap→VideoFrame more reliably
+  // than HTMLCanvasElement→VideoFrame, and the await naturally yields to the
+  // event loop so encoder errors surface immediately.
   if (hasBlank) {
     renderOverlayFrame(ctx, null, WIDTH, HEIGHT);
+    var blankBitmap = await createImageBitmap(canvas);
     var blankEndUs = Math.round(entries[0].start * 1000000);
     var bts = 0, blankKey = true;
     while (bts < blankEndUs) {
       var bdur = Math.min(MAX_CHUNK_US, blankEndUs - bts);
-      var blankVf = new VideoFrame(canvas, { timestamp: bts, duration: bdur });
+      var blankVf = new VideoFrame(blankBitmap, { timestamp: bts, duration: bdur });
       encoder.encode(blankVf, { keyFrame: blankKey });
       blankVf.close();
       bts += bdur;
       blankKey = false;
     }
+    blankBitmap.close();
     done++;
     if (onProgress) onProgress(Math.round(done * 100 / total));
-    await new Promise(function(r) { setTimeout(r, 0); });
+    if (encoderError) throw encoderError;
   }
 
-  // One canvas render per score change, chunked into ≤2-second VideoFrames
+  // One canvas render per score change, chunked into ≤2-second VideoFrames.
+  // The await createImageBitmap() on each entry yields to the event loop,
+  // keeping the UI responsive and surfacing encoder errors promptly.
   for (var j = 0; j < entries.length; j++) {
     if (encoderError) throw encoderError;
     var e = entries[j];
     renderOverlayFrame(ctx, e, WIDTH, HEIGHT);
+    var entryBitmap = await createImageBitmap(canvas);
     var ets = Math.round(e.start * 1000000);
     var ete = Math.round(e.end * 1000000);
     var ekey = true;
     while (ets < ete) {
       var edur = Math.min(MAX_CHUNK_US, ete - ets);
-      var vf = new VideoFrame(canvas, { timestamp: ets, duration: edur });
+      var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
       encoder.encode(vf, { keyFrame: ekey });
       vf.close();
       ets += edur;
       ekey = false;
     }
+    entryBitmap.close();
     done++;
     if (onProgress) onProgress(Math.round(done * 100 / total));
-    if (j % 10 === 9) await new Promise(function(r) { setTimeout(r, 0); });
   }
 
   await encoder.flush();
