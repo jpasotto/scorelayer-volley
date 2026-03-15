@@ -116,6 +116,10 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
 </head>
 <body>
 <div id="root"></div>
+<script type="module">
+import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs';
+window.Mp4Muxer = { Muxer, ArrayBufferTarget };
+</script>
 <script>
 // --- Constants ---
 const POINTS_TO_WIN_SET = 25;
@@ -724,6 +728,149 @@ function buildZip(files) {
   return result;
 }
 
+// --- WebCodecs overlay generator ---
+
+// Renders one frame onto a 2D canvas context.
+// entry = null → blank green frame (used for the pre-match gap).
+function renderOverlayFrame(ctx, entry, width, height) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(0, 0, width, height);
+  if (!entry) return;
+
+  ctx.textBaseline = 'bottom';
+  ctx.shadowColor = '#000000';
+
+  // Score: white, bold 72px, centered, near bottom
+  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText(entry.score, width / 2, height - 60);
+
+  // Info row: cyan, bold 36px — [title left] [Set N center] [Sets A:B right]
+  ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#00ccff';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 2;
+
+  ctx.textAlign = 'center';
+  ctx.fillText(entry.set_info, width / 2, height - 145);
+
+  if (entry.title) {
+    ctx.textAlign = 'left';
+    ctx.fillText(entry.title, 80, height - 145);
+  }
+  if (entry.sets_score) {
+    ctx.textAlign = 'right';
+    ctx.fillText(entry.sets_score, width - 80, height - 145);
+  }
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+// Encodes a green-screen score overlay as an MP4 using WebCodecs + mp4-muxer.
+// Uses VFR: one VideoFrame per score change (~100-200 frames total).
+// onProgress(0-100) is called as frames are submitted.
+// Returns a Promise that resolves to an ArrayBuffer containing the MP4 file.
+async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTitle, onProgress) {
+  if (!syncTimestamp || pointLog.length === 0) throw new Error("No sync point or no points recorded.");
+  var Mp4Muxer = window.Mp4Muxer;
+  if (!Mp4Muxer) throw new Error("MP4 muxer not loaded. Please refresh and try again.");
+
+  var title = (matchTitle || "").trim();
+  var WIDTH = 1920, HEIGHT = 1080;
+
+  // Build entries (same structure as generateChromaScript)
+  var entries = [];
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    var startSec = (p.timestamp - syncTimestamp) / 1000;
+    var endSec = i < pointLog.length - 1
+      ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000
+      : startSec + 10;
+    if (startSec < 0) continue;
+    entries.push({
+      start: Math.round(startSec * 1000) / 1000,
+      end: Math.round(endSec * 1000) / 1000,
+      score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
+      set_info: "Set " + p.setNum,
+      title: title,
+      sets_score: "Sets " + p.setsA + ":" + p.setsB
+    });
+  }
+  if (entries.length === 0) throw new Error("No entries after sync point.");
+
+  var canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  var ctx = canvas.getContext("2d");
+
+  var target = new Mp4Muxer.ArrayBufferTarget();
+  var muxer = new Mp4Muxer.Muxer({
+    target: target,
+    video: { codec: 'avc', width: WIDTH, height: HEIGHT },
+    fastStart: 'in-memory',
+  });
+
+  var encoderError = null;
+  var encoder = new VideoEncoder({
+    output: function(chunk, meta) { muxer.addVideoChunk(chunk, meta); },
+    error: function(e) { encoderError = e; console.error("VideoEncoder:", e); }
+  });
+  encoder.configure({
+    codec: 'avc1.42E01F',
+    width: WIDTH,
+    height: HEIGHT,
+    bitrate: 8000000,
+    latencyMode: 'quality',
+  });
+
+  var hasBlank = entries[0].start > 0;
+  var total = entries.length + (hasBlank ? 1 : 0);
+  var done = 0;
+
+  // Blank green frame covering the gap before the first score event
+  if (hasBlank) {
+    renderOverlayFrame(ctx, null, WIDTH, HEIGHT);
+    var blankFrame = new VideoFrame(canvas, {
+      timestamp: 0,
+      duration: Math.round(entries[0].start * 1000000),
+    });
+    encoder.encode(blankFrame, { keyFrame: true });
+    blankFrame.close();
+    done++;
+    if (onProgress) onProgress(Math.round(done * 100 / total));
+    await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  // One VideoFrame per score change (VFR)
+  for (var j = 0; j < entries.length; j++) {
+    if (encoderError) throw encoderError;
+    var e = entries[j];
+    renderOverlayFrame(ctx, e, WIDTH, HEIGHT);
+    var vf = new VideoFrame(canvas, {
+      timestamp: Math.round(e.start * 1000000),
+      duration: Math.round((e.end - e.start) * 1000000),
+    });
+    encoder.encode(vf, { keyFrame: true });
+    vf.close();
+    done++;
+    if (onProgress) onProgress(Math.round(done * 100 / total));
+    if (j % 20 === 19) await new Promise(function(r) { setTimeout(r, 0); });
+  }
+
+  await encoder.flush();
+  muxer.finalize();
+  return target.buffer;
+}
+
 // CRC32 lookup table
 var crc32Table = null;
 function crc32(bytes) {
@@ -754,6 +901,8 @@ function VolleyballTracker() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [exportModal, setExportModal] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
+  const [isEncoding, setIsEncoding] = useState(false);
+  const [encodeProgress, setEncodeProgress] = useState(0);
 
   const startMatch = useCallback(() => {
     setState(function(s) { return { ...s, matchStarted: true, teamA: s.teamA.trim() || "Home", teamB: s.teamB.trim() || "Away" }; });
@@ -917,6 +1066,44 @@ function VolleyballTracker() {
         }
       };
       reader.readAsDataURL(blob);
+    }
+  }
+
+  async function handleGenerateMP4() {
+    if (typeof VideoEncoder === 'undefined') {
+      window.alert("Your browser does not support WebCodecs. Use the Chroma Kit (.zip) fallback below.");
+      return;
+    }
+    if (!window.Mp4Muxer) {
+      window.alert("MP4 muxer is still loading. Please try again in a moment.");
+      return;
+    }
+    setIsEncoding(true);
+    setEncodeProgress(0);
+    try {
+      var mp4Buffer = await generateOverlayMP4(
+        state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle,
+        function(pct) { setEncodeProgress(pct); }
+      );
+      setIsEncoding(false);
+      var blob = new Blob([mp4Buffer], { type: 'video/mp4' });
+      var filename = 'scorelayer_' + state.teamA + '_vs_' + state.teamB + '_overlay.mp4';
+      var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      if (isIOS && navigator.share && navigator.canShare) {
+        var file = new File([blob], filename, { type: 'video/mp4' });
+        if (navigator.canShare({ files: [file] })) {
+          navigator.share({ title: 'ScoreLayer Overlay', files: [file] }).catch(function(err) {
+            if (err.name !== 'AbortError') blobDownloadFallback(blob, filename);
+          });
+          return;
+        }
+      }
+      blobDownloadFallback(blob, filename);
+    } catch(err) {
+      console.error('MP4 generation failed:', err);
+      window.alert('MP4 generation failed: ' + (err.message || err));
+      setIsEncoding(false);
+      setEncodeProgress(0);
     }
   }
 
@@ -1106,10 +1293,17 @@ function VolleyballTracker() {
               <span className="hint">Shown left of Set # in the overlay. Leave blank to omit.</span>
             </div>
 
-            <button className="btn btn-primary" style={{ background: "#16a34a", boxShadow: "0 4px 20px rgba(22,163,74,0.3)" }} onClick={downloadChromaKit} disabled={!state.syncTimestamp}>Download Chroma Kit (.zip)</button>
-            <div className="format-info" style={{ fontSize: 11, textAlign: "center" }}>
-              Downloads a ZIP with .ass subtitles, FFmpeg script, and README. Overlay info row: <strong>[Title] · Set N · Sets A:B</strong>
-            </div>
+            <button className="btn btn-primary" style={{ background: "#16a34a", boxShadow: "0 4px 20px rgba(22,163,74,0.3)" }} onClick={handleGenerateMP4} disabled={!state.syncTimestamp || isEncoding}>
+              {isEncoding ? "Generating\u2026 " + encodeProgress + "%" : "Generate Overlay MP4"}
+            </button>
+            {isEncoding && (
+              <div style={{ width: "100%", background: "var(--surface2)", borderRadius: 4, overflow: "hidden", height: 6 }}>
+                <div style={{ width: encodeProgress + "%", height: "100%", background: "#16a34a", transition: "width 0.2s" }} />
+              </div>
+            )}
+            <button className="btn btn-small" onClick={downloadChromaKit} disabled={!state.syncTimestamp || isEncoding}>
+              ↓ Chroma Kit (.zip fallback)
+            </button>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button className="btn btn-small" style={{ flex: 1 }} onClick={function() { openExport("ass"); }} disabled={!state.syncTimestamp}>View ASS</button>
               <button className="btn btn-small" style={{ flex: 1 }} onClick={function() { openExport("chroma"); }} disabled={!state.syncTimestamp}>View Script</button>
