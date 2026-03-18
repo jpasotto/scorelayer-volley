@@ -247,11 +247,12 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
   return lines.join("\n");
 }
 
-function generateCSV(pointLog, syncTimestamp, teamA, teamB) {
-  var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,ScoringTeam,Correction,ScoreDisplay";
+function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+  var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,MatchTitle,ScoreDisplay";
   var rows = pointLog.map(function(p, i) {
     var offset = syncTimestamp ? p.timestamp - syncTimestamp : "";
-    return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", '"' + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
+    var title = (matchTitle || "").replace(/"/g, '""');
+    return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.setsA || 0, p.setsB || 0, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", '"' + title + '"', '"' + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
   });
   return [header].concat(rows).join("\n");
 }
@@ -736,10 +737,14 @@ function parseCSVToEntries(csvText, matchTitle) {
   var iPB = cols.indexOf("PointsB");
   var iCorr = cols.indexOf("Correction");
   var iDisplay = cols.indexOf("ScoreDisplay");
+  var iSA = cols.indexOf("SetsA");
+  var iSB = cols.indexOf("SetsB");
+  var iTitle = cols.indexOf("MatchTitle");
 
   if (iOffset === -1 || iSet === -1 || iPA === -1 || iPB === -1) {
     return { error: "CSV missing required columns: VideoOffset_ms, Set, PointsA, PointsB" };
   }
+  var hasSetsColumns = iSA !== -1 && iSB !== -1;
 
   // Extract team names from ScoreDisplay of first non-correction row
   var teamA = "Home", teamB = "Away";
@@ -769,22 +774,35 @@ function parseCSVToEntries(csvText, matchTitle) {
       setNum: parseInt(row[iSet], 10) || 1,
       pointsA: parseInt(row[iPA], 10) || 0,
       pointsB: parseInt(row[iPB], 10) || 0,
+      setsA: hasSetsColumns ? (parseInt(row[iSA], 10) || 0) : -1,
+      setsB: hasSetsColumns ? (parseInt(row[iSB], 10) || 0) : -1,
     });
   }
 
   if (dataRows.length === 0) return { error: "No valid data rows found in CSV." };
 
-  var title = (matchTitle || "").trim();
+  // Read MatchTitle from CSV if no explicit title provided
+  var csvTitle = "";
+  if (iTitle !== -1 && dataRows.length > 0) {
+    var firstRow = parseCSVRow(lines[1]);
+    csvTitle = (firstRow[iTitle] || "").replace(/"/g, "").trim();
+  }
+  var title = (matchTitle || csvTitle || "").trim();
 
-  // Calculate cumulative set wins from set transitions
+  // Build entries — use exact SetsA/SetsB from CSV when available, otherwise infer from set transitions
   var entries = [];
   var setsA = 0, setsB = 0, prevSetNum = 0, prevPointsA = 0, prevPointsB = 0;
   for (var j = 0; j < dataRows.length; j++) {
     var d = dataRows[j];
-    // When set number advances, the previous set ended — award it to the leader
-    if (d.setNum > prevSetNum && prevSetNum > 0) {
-      if (prevPointsA > prevPointsB) setsA++;
-      else if (prevPointsB > prevPointsA) setsB++;
+    if (hasSetsColumns) {
+      setsA = d.setsA;
+      setsB = d.setsB;
+    } else {
+      // Infer from set transitions for older CSVs without SetsA/SetsB columns
+      if (d.setNum > prevSetNum && prevSetNum > 0) {
+        if (prevPointsA > prevPointsB) setsA++;
+        else if (prevPointsB > prevPointsA) setsB++;
+      }
     }
     prevSetNum = d.setNum;
     prevPointsA = d.pointsA;
@@ -802,7 +820,7 @@ function parseCSVToEntries(csvText, matchTitle) {
     });
   }
 
-  return { entries: entries, teamA: teamA, teamB: teamB, rowCount: dataRows.length };
+  return { entries: entries, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
 }
 
 function parseCSVRow(line) {
@@ -1323,7 +1341,7 @@ function VolleyballTracker() {
       fname = "generate_overlay.sh";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else {
-      content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname += ".csv";
     }
     setCopyFeedback("");
@@ -1347,7 +1365,7 @@ function VolleyballTracker() {
   }
 
   function downloadCSV() {
-    var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+    var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB + ".csv";
     var blob = new Blob([content], { type: "text/csv" });
     shareOrDownload(blob, fname, "text/csv");
@@ -1390,7 +1408,9 @@ function VolleyballTracker() {
     var text = e.target.value;
     setCsvText(text);
     if (text.trim().length > 20) {
-      setCsvParseResult(parseCSVToEntries(text));
+      var parsed = parseCSVToEntries(text);
+      setCsvParseResult(parsed);
+      if (parsed.csvTitle && !csvMatchTitle) setCsvMatchTitle(parsed.csvTitle);
     } else {
       setCsvParseResult(null);
     }
@@ -1403,7 +1423,9 @@ function VolleyballTracker() {
     reader.onload = function() {
       var text = reader.result;
       setCsvText(text);
-      setCsvParseResult(parseCSVToEntries(text));
+      var parsed = parseCSVToEntries(text);
+      setCsvParseResult(parsed);
+      if (parsed.csvTitle) setCsvMatchTitle(parsed.csvTitle);
     };
     reader.readAsText(file);
   }
