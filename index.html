@@ -724,7 +724,7 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle) 
 
 
 // --- CSV parser (for import/recovery) ---
-function parseCSVToEntries(csvText) {
+function parseCSVToEntries(csvText, matchTitle) {
   var lines = csvText.trim().split("\n");
   if (lines.length < 2) return { error: "CSV must have a header row and at least one data row." };
 
@@ -774,9 +774,21 @@ function parseCSVToEntries(csvText) {
 
   if (dataRows.length === 0) return { error: "No valid data rows found in CSV." };
 
+  var title = (matchTitle || "").trim();
+
+  // Calculate cumulative set wins from set transitions
   var entries = [];
+  var setsA = 0, setsB = 0, prevSetNum = 0, prevPointsA = 0, prevPointsB = 0;
   for (var j = 0; j < dataRows.length; j++) {
     var d = dataRows[j];
+    // When set number advances, the previous set ended — award it to the leader
+    if (d.setNum > prevSetNum && prevSetNum > 0) {
+      if (prevPointsA > prevPointsB) setsA++;
+      else if (prevPointsB > prevPointsA) setsB++;
+    }
+    prevSetNum = d.setNum;
+    prevPointsA = d.pointsA;
+    prevPointsB = d.pointsB;
     var startSec = d.offset_ms / 1000;
     var endSec = j < dataRows.length - 1 ? dataRows[j + 1].offset_ms / 1000 : startSec + 10;
     if (startSec < 0) continue;
@@ -785,8 +797,8 @@ function parseCSVToEntries(csvText) {
       end: Math.round(endSec * 1000) / 1000,
       score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
       set_info: "Set " + d.setNum,
-      title: "",
-      sets_score: ""
+      title: title,
+      sets_score: "Sets " + setsA + ":" + setsB
     });
   }
 
@@ -1144,6 +1156,7 @@ function VolleyballTracker() {
   const [csvIsEncoding, setCsvIsEncoding] = useState(false);
   const [csvEncodeProgress, setCsvEncodeProgress] = useState(0);
   const [csvPositionTop, setCsvPositionTop] = useState(true);
+  const [csvMatchTitle, setCsvMatchTitle] = useState("");
 
   // Autosave indicator
   const [showAutosaved, setShowAutosaved] = useState(false);
@@ -1398,11 +1411,15 @@ function VolleyballTracker() {
   async function handleCSVGenerateMP4() {
     if (!csvParseResult || !csvParseResult.entries || csvIsEncoding) return;
 
+    // Re-parse with current title so overlay includes it
+    var finalResult = parseCSVToEntries(csvText, csvMatchTitle);
+    if (!finalResult.entries) finalResult = csvParseResult;
+
     setCsvIsEncoding(true);
     setCsvEncodeProgress(0);
 
     var result = await generateOverlayMP4(
-      csvParseResult.entries, csvParseResult.teamA, csvParseResult.teamB,
+      finalResult.entries, finalResult.teamA, finalResult.teamB,
       csvPositionTop, function(pct) { setCsvEncodeProgress(pct); }
     );
 
@@ -1499,6 +1516,16 @@ function VolleyballTracker() {
               <div className="parsed-info">
                 Parsed <strong>{csvParseResult.rowCount}</strong> score entries for <strong>{csvParseResult.teamA}</strong> vs <strong>{csvParseResult.teamB}</strong>.
                 Duration: ~{Math.ceil(csvParseResult.entries[csvParseResult.entries.length - 1].end)}s
+              </div>
+              <div className="input-group" style={{ gap: 4 }}>
+                <label style={{ fontSize: 11, color: "var(--text-dim)", letterSpacing: 1 }}>OVERLAY TITLE</label>
+                <input
+                  type="text"
+                  value={csvMatchTitle}
+                  placeholder="e.g. U14 Girls League"
+                  onChange={function(e) { setCsvMatchTitle(e.target.value); }}
+                />
+                <span className="hint">Shown left of Set # in the overlay. Leave blank to omit.</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 11, color: "var(--text-dim)", letterSpacing: 1 }}>POSITION:</span>
