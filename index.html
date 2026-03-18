@@ -47,6 +47,7 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .btn-secondary { background: var(--surface2); color: var(--text); padding: 12px 20px; font-size: 13px; }
   .btn-small { background: var(--surface2); color: var(--text-dim); padding: 8px 14px; font-size: 11px; }
   .btn-danger { background: rgba(239, 68, 68, 0.15); color: var(--team-b); padding: 10px 16px; font-size: 12px; }
+  .btn-success { background: #16a34a; color: #fff; padding: 16px 32px; font-size: 16px; box-shadow: 0 4px 20px rgba(22,163,74,0.3); }
   .match { flex: 1; display: flex; flex-direction: column; }
   .sync-bar { padding: 10px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--surface); border-bottom: 1px solid var(--surface2); }
   .sync-bar.sync-bar-alert { background: rgba(234, 179, 8, 0.1); border-bottom: 2px solid var(--warning); }
@@ -112,6 +113,28 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .title-input-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
   .title-input-wrap input::placeholder { color: var(--text-dim); }
   .title-input-wrap .hint { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
+  .position-toggle { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--surface2); }
+  .position-toggle button { flex: 1; padding: 8px 14px; font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; border: none; cursor: pointer; transition: all 0.15s; background: var(--surface2); color: var(--text-dim); }
+  .position-toggle button.active { background: #16a34a; color: #fff; }
+  .progress-bar-track { width: 100%; background: var(--surface2); border-radius: 4px; overflow: hidden; height: 6px; }
+  .progress-bar-fill { height: 100%; background: #16a34a; transition: width 0.2s; }
+  .error-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 24px; }
+  .error-modal { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 360px; width: 100%; display: flex; flex-direction: column; gap: 16px; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .error-modal h3 { font-size: 16px; font-weight: 600; letter-spacing: 1px; color: var(--team-b); text-align: center; }
+  .error-modal p { font-size: 13px; color: var(--text-dim); font-weight: 400; line-height: 1.6; }
+  .error-modal .error-detail { background: var(--bg); border: 1px solid var(--surface2); border-radius: 8px; padding: 10px 12px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); word-break: break-all; max-height: 60px; overflow-y: auto; }
+  .error-modal .error-actions { display: flex; flex-direction: column; gap: 8px; }
+  .csv-import { flex: 1; display: flex; flex-direction: column; padding: 24px; gap: 16px; overflow-y: auto; }
+  .csv-import-title { font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; text-align: center; color: var(--accent); }
+  .csv-import-subtitle { text-align: center; color: var(--text-dim); font-size: 12px; letter-spacing: 1px; margin-top: -8px; }
+  .csv-import textarea { background: var(--surface); border: 1px solid var(--surface2); border-radius: 8px; padding: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--text); min-height: 160px; resize: vertical; outline: none; -webkit-user-select: text; user-select: text; }
+  .csv-import textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .csv-import textarea::placeholder { color: var(--text-dim); }
+  .csv-import .file-picker-row { display: flex; gap: 10px; align-items: center; }
+  .csv-import .file-picker-row input[type="file"] { display: none; }
+  .csv-import .parsed-info { background: var(--surface); border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--text-dim); line-height: 1.5; border-left: 3px solid var(--success); }
+  .csv-import .parsed-error { border-left-color: var(--team-b); }
+  .autosave-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-family: var(--font-mono); color: var(--success); letter-spacing: 0.5px; }
 </style>
 </head>
 <body>
@@ -122,23 +145,24 @@ window.Mp4Muxer = { Muxer, ArrayBufferTarget };
 </script>
 <script>
 // --- Constants ---
-const POINTS_TO_WIN_SET = 25;
-const POINTS_TO_WIN_TIEBREAK = 15;
-const SETS_TO_WIN_MATCH = 3;
-const MIN_LEAD = 2;
+var POINTS_TO_WIN_SET = 25;
+var POINTS_TO_WIN_TIEBREAK = 15;
+var SETS_TO_WIN_MATCH = 3;
+var MIN_LEAD = 2;
+var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 
 // --- Helpers ---
 function formatSRTTime(ms) {
   if (ms < 0) ms = 0;
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const mil = ms % 1000;
+  var h = Math.floor(ms / 3600000);
+  var m = Math.floor((ms % 3600000) / 60000);
+  var s = Math.floor((ms % 60000) / 1000);
+  var mil = ms % 1000;
   return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "," + String(mil).padStart(3, "0");
 }
 
 function formatClockTime(ts) {
-  const d = new Date(ts);
+  var d = new Date(ts);
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
@@ -172,18 +196,47 @@ function createInitialState() {
   };
 }
 
-const SCREEN = { SETUP: "setup", MATCH: "match" };
+var SCREEN = { SETUP: "setup", MATCH: "match", CSV_IMPORT: "csv_import" };
+
+// --- LocalStorage autosave ---
+function autosaveState(state) {
+  try {
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify({
+      teamA: state.teamA, teamB: state.teamB, matchTitle: state.matchTitle,
+      setsA: state.setsA, setsB: state.setsB,
+      pointsA: state.pointsA, pointsB: state.pointsB,
+      setHistory: state.setHistory, pointLog: state.pointLog,
+      matchStarted: state.matchStarted, matchOver: state.matchOver,
+      syncTimestamp: state.syncTimestamp, currentSet: state.currentSet,
+      savedAt: Date.now()
+    }));
+  } catch (e) { /* localStorage full or unavailable */ }
+}
+
+function loadAutosave() {
+  try {
+    var raw = localStorage.getItem(LOCALSTORAGE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data.matchStarted) return null;
+    return data;
+  } catch (e) { return null; }
+}
+
+function clearAutosave() {
+  try { localStorage.removeItem(LOCALSTORAGE_KEY); } catch (e) {}
+}
 
 
 // --- Generators ---
 function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
   if (!syncTimestamp || pointLog.length === 0) return "";
-  const lines = [];
-  let idx = 1;
-  for (let i = 0; i < pointLog.length; i++) {
-    const p = pointLog[i];
-    const startMs = p.timestamp - syncTimestamp;
-    const endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+  var lines = [];
+  var idx = 1;
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    var startMs = p.timestamp - syncTimestamp;
+    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
     lines.push(String(idx));
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
@@ -195,12 +248,12 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
 }
 
 function generateCSV(pointLog, syncTimestamp, teamA, teamB) {
-  const header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,ScoringTeam,Correction,ScoreDisplay";
-  const rows = pointLog.map((p, i) => {
-    const offset = syncTimestamp ? p.timestamp - syncTimestamp : "";
+  var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,ScoringTeam,Correction,ScoreDisplay";
+  var rows = pointLog.map(function(p, i) {
+    var offset = syncTimestamp ? p.timestamp - syncTimestamp : "";
     return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", '"' + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
   });
-  return [header, ...rows].join("\n");
+  return [header].concat(rows).join("\n");
 }
 
 function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
@@ -287,11 +340,11 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
     var startT = formatASSTime(startMs);
     var endT = formatASSTime(endMs);
 
-    // Bottom score line — large, centered
+    // Bottom score line - large, centered
     var scoreText = teamA + "  " + p.pointsA + "  -  " + p.pointsB + "  " + teamB;
     events.push("Dialogue: 0," + startT + "," + endT + ",Score,,0,0,0,," + scoreText);
 
-    // Info row — three positioned elements on same Y level (y=900, i.e. 130px above score baseline)
+    // Info row - three positioned elements on same Y level (y=900, i.e. 130px above score baseline)
     // \an1 = bottom-left anchor, \an2 = bottom-center, \an3 = bottom-right
     var centerText = "Set " + p.setNum;
     var rightText = "Sets " + p.setsA + ":" + p.setsB;
@@ -314,7 +367,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
   var totalSec = Math.ceil((lastEntry.timestamp - syncTimestamp + 10000) / 1000);
   var fname = "volleyball_" + teamA + "_vs_" + teamB;
 
-  // Build JSON data for the Python script — includes title and sets_score per entry
+  // Build JSON data for the Python script - includes title and sets_score per entry
   var entries = [];
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
@@ -421,7 +474,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
     "    img = Image.new('RGB', (WIDTH, HEIGHT), GREEN)",
     "    draw = ImageDraw.Draw(img)",
     "    if active:",
-    "        # ── Score line (large, centered near bottom) ──",
+    "        # -- Score line (large, centered near bottom) --",
     "        score_text = active['score']",
     "        bbox = draw.textbbox((0, 0), score_text, font=font_score)",
     "        tw = bbox[2] - bbox[0]",
@@ -432,7 +485,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
     "                draw.text((sx + dx, sy + dy), score_text, font=font_score, fill=BLACK)",
     "        draw.text((sx, sy), score_text, font=font_score, fill=WHITE)",
     "",
-    "        # ── Info row: [title left]  [Set N center]  [Sets A:B right] ──",
+    "        # -- Info row: [title left]  [Set N center]  [Sets A:B right] --",
     "        sy2 = HEIGHT - 180",
     "",
     "        # Center: Set N",
@@ -646,6 +699,347 @@ function generateReadme(teamA, teamB) {
   ].join("\n");
 }
 
+
+// --- Build entries array from pointLog (shared by MP4 generator and chroma script) ---
+function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+  if (!syncTimestamp || pointLog.length === 0) return [];
+  var title = (matchTitle || "").trim();
+  var entries = [];
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    var startSec = (p.timestamp - syncTimestamp) / 1000;
+    var endSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
+    if (startSec < 0) continue;
+    entries.push({
+      start: Math.round(startSec * 1000) / 1000,
+      end: Math.round(endSec * 1000) / 1000,
+      score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
+      set_info: "Set " + p.setNum,
+      title: title,
+      sets_score: "Sets " + p.setsA + ":" + p.setsB
+    });
+  }
+  return entries;
+}
+
+
+// --- CSV parser (for import/recovery) ---
+function parseCSVToEntries(csvText) {
+  var lines = csvText.trim().split("\n");
+  if (lines.length < 2) return { error: "CSV must have a header row and at least one data row." };
+
+  var header = lines[0];
+  var cols = header.split(",").map(function(c) { return c.trim(); });
+  var iOffset = cols.indexOf("VideoOffset_ms");
+  var iSet = cols.indexOf("Set");
+  var iPA = cols.indexOf("PointsA");
+  var iPB = cols.indexOf("PointsB");
+  var iCorr = cols.indexOf("Correction");
+  var iDisplay = cols.indexOf("ScoreDisplay");
+
+  if (iOffset === -1 || iSet === -1 || iPA === -1 || iPB === -1) {
+    return { error: "CSV missing required columns: VideoOffset_ms, Set, PointsA, PointsB" };
+  }
+
+  // Extract team names from ScoreDisplay of first non-correction row
+  var teamA = "Home", teamB = "Away";
+  for (var t = 1; t < lines.length; t++) {
+    var testRow = parseCSVRow(lines[t]);
+    if (iCorr !== -1 && testRow[iCorr] && testRow[iCorr].trim() === "Y") continue;
+    if (iDisplay !== -1 && testRow[iDisplay]) {
+      var display = testRow[iDisplay].replace(/"/g, "").trim();
+      var match = display.match(/^(.+?)\s+\d+\s*-\s*\d+\s+(.+)$/);
+      if (match) {
+        teamA = match[1].trim();
+        teamB = match[2].trim();
+      }
+    }
+    break;
+  }
+
+  var dataRows = [];
+  for (var i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    var row = parseCSVRow(lines[i]);
+    var offset = parseInt(row[iOffset], 10);
+    if (isNaN(offset)) continue;
+    if (iCorr !== -1 && row[iCorr] && row[iCorr].trim() === "Y") continue;
+    dataRows.push({
+      offset_ms: offset,
+      setNum: parseInt(row[iSet], 10) || 1,
+      pointsA: parseInt(row[iPA], 10) || 0,
+      pointsB: parseInt(row[iPB], 10) || 0,
+    });
+  }
+
+  if (dataRows.length === 0) return { error: "No valid data rows found in CSV." };
+
+  var entries = [];
+  for (var j = 0; j < dataRows.length; j++) {
+    var d = dataRows[j];
+    var startSec = d.offset_ms / 1000;
+    var endSec = j < dataRows.length - 1 ? dataRows[j + 1].offset_ms / 1000 : startSec + 10;
+    if (startSec < 0) continue;
+    entries.push({
+      start: Math.round(startSec * 1000) / 1000,
+      end: Math.round(endSec * 1000) / 1000,
+      score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
+      set_info: "Set " + d.setNum,
+      title: "",
+      sets_score: ""
+    });
+  }
+
+  return { entries: entries, teamA: teamA, teamB: teamB, rowCount: dataRows.length };
+}
+
+function parseCSVRow(line) {
+  var result = [];
+  var current = "";
+  var inQuotes = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+
+// --- WebCodecs overlay generator ---
+
+// Renders one frame onto a 2D canvas context.
+// entry = null -> blank green frame (used for the pre-match gap).
+// positionTop = true -> text at top of frame; false -> bottom (legacy).
+function renderOverlayFrame(ctx, entry, width, height, positionTop) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(0, 0, width, height);
+  if (!entry) return;
+
+  ctx.shadowColor = '#000000';
+
+  var scoreY, infoY;
+  if (positionTop !== false) {
+    // Top layout: info row first, score below it
+    ctx.textBaseline = 'top';
+    infoY  = 50;
+    scoreY = 50 + 36 + 14; // info height + gap
+  } else {
+    // Bottom layout (original): score near bottom, info row above it
+    ctx.textBaseline = 'bottom';
+    scoreY = height - 60;
+    infoY  = height - 145;
+  }
+
+  // Score: white, bold 72px, centered
+  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText(entry.score, width / 2, scoreY);
+
+  // Info row: cyan, bold 36px - [title left] [Set N center] [Sets A:B right]
+  ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#00ccff';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 2;
+
+  ctx.textAlign = 'center';
+  ctx.fillText(entry.set_info, width / 2, infoY);
+
+  if (entry.title) {
+    ctx.textAlign = 'left';
+    ctx.fillText(entry.title, 80, infoY);
+  }
+  if (entry.sets_score) {
+    ctx.textAlign = 'right';
+    ctx.fillText(entry.sets_score, width - 80, infoY);
+  }
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+// Encodes a green-screen score overlay as an MP4 using WebCodecs + mp4-muxer.
+// Uses VFR: one VideoFrame per score change (~100-200 frames total).
+// Returns: { success: true, blob, filename } or { success: false, error, fallback, detail }
+async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress) {
+  if (typeof VideoEncoder === 'undefined') {
+    return { success: false, error: "WebCodecs not supported in this browser.", fallback: true };
+  }
+  var Mp4Muxer = window.Mp4Muxer;
+  if (!Mp4Muxer) {
+    return { success: false, error: "MP4 muxer not loaded yet. Please wait a moment and try again.", fallback: false };
+  }
+  if (!entries || entries.length === 0) {
+    return { success: false, error: "No overlay entries to encode.", fallback: false };
+  }
+
+  var WIDTH = 1920, HEIGHT = 1080;
+  var MAX_CHUNK_US = 2000000; // 2 seconds max per VideoFrame (iOS VideoToolbox limit)
+
+  var totalChunks = 0;
+  for (var e = 0; e < entries.length; e++) {
+    var dur = entries[e].end - entries[e].start;
+    totalChunks += Math.ceil(dur / 2);
+  }
+  var hasBlank = entries[0].start > 0;
+  if (hasBlank) totalChunks += Math.ceil(entries[0].start / 2);
+
+  var canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  // alpha: false -> opaque backing store; H.264 has no alpha channel and iOS
+  // VideoToolbox can reject VideoFrames created from RGBA canvas data.
+  var ctx = canvas.getContext("2d", { alpha: false });
+
+  var target = new Mp4Muxer.ArrayBufferTarget();
+  var muxer = new Mp4Muxer.Muxer({
+    target: target,
+    video: { codec: 'avc', width: WIDTH, height: HEIGHT },
+    fastStart: 'in-memory',
+  });
+
+  var encoderError = null;
+  var encodeQueueSize = 0;
+  var encoder = new VideoEncoder({
+    output: function(chunk, meta) {
+      encodeQueueSize--;
+      try { muxer.addVideoChunk(chunk, meta); } catch (err) { encoderError = err; }
+    },
+    error: function(e) { encoderError = e; console.error("VideoEncoder:", e); }
+  });
+  // avc1.4D4028 = H.264 Main Profile Level 4.0, required for 1920x1080 @ 30fps.
+  var baseConfig = {
+    codec: 'avc1.4D4028',
+    width: WIDTH,
+    height: HEIGHT,
+    bitrate: 8000000,
+  };
+  try {
+    if (typeof VideoEncoder.isConfigSupported === 'function') {
+      var support = await VideoEncoder.isConfigSupported(baseConfig);
+      if (!support.supported) {
+        return { success: false, error: "H.264 encoding at 1920x1080 is not supported in this browser. Use the Chroma Kit (.zip) fallback instead.", fallback: true };
+      }
+    }
+    encoder.configure(baseConfig);
+  } catch (configErr) {
+    return { success: false, error: "Encoder config failed: " + configErr.message, fallback: true };
+  }
+
+  var processedChunks = 0;
+
+  try {
+    // Blank green frame(s) covering the gap before the first score event.
+    if (hasBlank) {
+      renderOverlayFrame(ctx, null, WIDTH, HEIGHT, positionTop);
+      var blankBitmap = await createImageBitmap(canvas);
+      var blankEndUs = Math.round(entries[0].start * 1000000);
+      var bts = 0, blankKey = true;
+      while (bts < blankEndUs) {
+        var bdur = Math.min(MAX_CHUNK_US, blankEndUs - bts);
+        // Backpressure: wait if encoder queue is backed up
+        while (encodeQueueSize > 5) {
+          await new Promise(function(r) { setTimeout(r, 10); });
+          if (encoderError) throw encoderError;
+        }
+        var blankVf = new VideoFrame(blankBitmap, { timestamp: bts, duration: bdur });
+        encodeQueueSize++;
+        encoder.encode(blankVf, { keyFrame: blankKey });
+        blankVf.close();
+        bts += bdur;
+        blankKey = false;
+        processedChunks++;
+        if (onProgress) onProgress(Math.min(99, Math.round(processedChunks * 100 / totalChunks)));
+      }
+      blankBitmap.close();
+      if (encoderError) throw encoderError;
+    }
+
+    // One canvas render per score change, chunked into <=2-second VideoFrames.
+    for (var j = 0; j < entries.length; j++) {
+      if (encoderError) throw encoderError;
+      var entry = entries[j];
+      renderOverlayFrame(ctx, entry, WIDTH, HEIGHT, positionTop);
+      var entryBitmap = await createImageBitmap(canvas);
+      var ets = Math.round(entry.start * 1000000);
+      var ete = Math.round(entry.end * 1000000);
+      var ekey = true;
+      while (ets < ete) {
+        var edur = Math.min(MAX_CHUNK_US, ete - ets);
+        // Backpressure: wait if encoder queue exceeds 5
+        while (encodeQueueSize > 5) {
+          await new Promise(function(r) { setTimeout(r, 10); });
+          if (encoderError) throw encoderError;
+        }
+        var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
+        encodeQueueSize++;
+        encoder.encode(vf, { keyFrame: ekey });
+        vf.close();
+        ets += edur;
+        ekey = false;
+        processedChunks++;
+        if (onProgress) onProgress(Math.min(99, Math.round(processedChunks * 100 / totalChunks)));
+      }
+      entryBitmap.close();
+    }
+
+    await encoder.flush();
+    if (encoderError) throw encoderError;
+    encoder.close();
+    muxer.finalize();
+
+    var blob = new Blob([target.buffer], { type: 'video/mp4' });
+    var filename = 'scorelayer_' + teamA + '_vs_' + teamB + '_overlay.mp4';
+    if (onProgress) onProgress(100);
+    return { success: true, blob: blob, filename: filename };
+
+  } catch (err) {
+    try { encoder.close(); } catch (x) {}
+    return {
+      success: false,
+      error: err.message || String(err),
+      fallback: true,
+      detail: "Entries: " + entries.length + ", At chunk: " + processedChunks + "/" + totalChunks
+    };
+  }
+}
+
+
+// CRC32 lookup table
+var crc32Table = null;
+function crc32(bytes) {
+  if (!crc32Table) {
+    crc32Table = new Uint32Array(256);
+    for (var i = 0; i < 256; i++) {
+      var c = i;
+      for (var j = 0; j < 8; j++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      crc32Table[i] = c;
+    }
+  }
+  var crc = 0xFFFFFFFF;
+  for (var k = 0; k < bytes.length; k++) {
+    crc = crc32Table[(crc ^ bytes[k]) & 0xFF] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
 // --- Minimal ZIP builder (store-only, no compression) ---
 function buildZip(files) {
   var te = new TextEncoder();
@@ -656,7 +1050,7 @@ function buildZip(files) {
   for (var i = 0; i < files.length; i++) {
     var nameBytes = te.encode(files[i].name);
     var dataBytes = te.encode(files[i].content);
-    var crc = crc32(dataBytes);
+    var crcVal = crc32(dataBytes);
 
     var local = new Uint8Array(30 + nameBytes.length + dataBytes.length);
     var dv = new DataView(local.buffer);
@@ -666,7 +1060,7 @@ function buildZip(files) {
     dv.setUint16(8, 0, true);
     dv.setUint16(10, 0, true);
     dv.setUint16(12, 0, true);
-    dv.setUint32(14, crc, true);
+    dv.setUint32(14, crcVal, true);
     dv.setUint32(18, dataBytes.length, true);
     dv.setUint32(22, dataBytes.length, true);
     dv.setUint16(26, nameBytes.length, true);
@@ -684,7 +1078,7 @@ function buildZip(files) {
     cdv.setUint16(10, 0, true);
     cdv.setUint16(12, 0, true);
     cdv.setUint16(14, 0, true);
-    cdv.setUint32(16, crc, true);
+    cdv.setUint32(16, crcVal, true);
     cdv.setUint32(20, dataBytes.length, true);
     cdv.setUint32(24, dataBytes.length, true);
     cdv.setUint16(28, nameBytes.length, true);
@@ -716,233 +1110,22 @@ function buildZip(files) {
   var totalLen = offset + centralSize + 22;
   var result = new Uint8Array(totalLen);
   var pos = 0;
-  for (var j = 0; j < localParts.length; j++) {
-    result.set(localParts[j], pos);
-    pos += localParts[j].length;
+  for (var p1 = 0; p1 < localParts.length; p1++) {
+    result.set(localParts[p1], pos);
+    pos += localParts[p1].length;
   }
-  for (var k = 0; k < centralDir.length; k++) {
-    result.set(centralDir[k], pos);
-    pos += centralDir[k].length;
+  for (var p2 = 0; p2 < centralDir.length; p2++) {
+    result.set(centralDir[p2], pos);
+    pos += centralDir[p2].length;
   }
   result.set(eocd, pos);
   return result;
 }
 
-// --- WebCodecs overlay generator ---
-
-// Renders one frame onto a 2D canvas context.
-// entry = null → blank green frame (used for the pre-match gap).
-// positionTop = true → text at top of frame; false → bottom (legacy).
-function renderOverlayFrame(ctx, entry, width, height, positionTop) {
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#00ff00';
-  ctx.fillRect(0, 0, width, height);
-  if (!entry) return;
-
-  ctx.shadowColor = '#000000';
-
-  var scoreY, infoY;
-  if (positionTop !== false) {
-    // Top layout: info row first, score below it
-    ctx.textBaseline = 'top';
-    infoY  = 50;
-    scoreY = 50 + 36 + 14; // info height + gap
-  } else {
-    // Bottom layout (original): score near bottom, info row above it
-    ctx.textBaseline = 'bottom';
-    scoreY = height - 60;
-    infoY  = height - 145;
-  }
-
-  // Score: white, bold 72px, centered
-  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 3;
-  ctx.shadowOffsetY = 3;
-  ctx.fillText(entry.score, width / 2, scoreY);
-
-  // Info row: cyan, bold 36px — [title left] [Set N center] [Sets A:B right]
-  ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
-  ctx.fillStyle = '#00ccff';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
-
-  ctx.textAlign = 'center';
-  ctx.fillText(entry.set_info, width / 2, infoY);
-
-  if (entry.title) {
-    ctx.textAlign = 'left';
-    ctx.fillText(entry.title, 80, infoY);
-  }
-  if (entry.sets_score) {
-    ctx.textAlign = 'right';
-    ctx.fillText(entry.sets_score, width - 80, infoY);
-  }
-
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 0;
-}
-
-// Encodes a green-screen score overlay as an MP4 using WebCodecs + mp4-muxer.
-// Uses VFR: one VideoFrame per score change (~100-200 frames total).
-// onProgress(0-100) is called as frames are submitted.
-// Returns a Promise that resolves to an ArrayBuffer containing the MP4 file.
-async function generateOverlayMP4(pointLog, syncTimestamp, teamA, teamB, matchTitle, onProgress, positionTop) {
-  if (!syncTimestamp || pointLog.length === 0) throw new Error("No sync point or no points recorded.");
-  var Mp4Muxer = window.Mp4Muxer;
-  if (!Mp4Muxer) throw new Error("MP4 muxer not loaded. Please refresh and try again.");
-
-  var title = (matchTitle || "").trim();
-  var WIDTH = 1920, HEIGHT = 1080;
-
-  // Build entries (same structure as generateChromaScript)
-  var entries = [];
-  for (var i = 0; i < pointLog.length; i++) {
-    var p = pointLog[i];
-    var startSec = (p.timestamp - syncTimestamp) / 1000;
-    var endSec = i < pointLog.length - 1
-      ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000
-      : startSec + 10;
-    if (startSec < 0) continue;
-    entries.push({
-      start: Math.round(startSec * 1000) / 1000,
-      end: Math.round(endSec * 1000) / 1000,
-      score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: "Set " + p.setNum,
-      title: title,
-      sets_score: "Sets " + p.setsA + ":" + p.setsB
-    });
-  }
-  if (entries.length === 0) throw new Error("No entries after sync point.");
-
-  var canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-  // alpha: false → opaque backing store; H.264 has no alpha channel and iOS
-  // VideoToolbox can reject VideoFrames created from RGBA canvas data.
-  var ctx = canvas.getContext("2d", { alpha: false });
-
-  var target = new Mp4Muxer.ArrayBufferTarget();
-  var muxer = new Mp4Muxer.Muxer({
-    target: target,
-    video: { codec: 'avc', width: WIDTH, height: HEIGHT },
-    fastStart: 'in-memory',
-  });
-
-  var encoderError = null;
-  var encoder = new VideoEncoder({
-    output: function(chunk, meta) { muxer.addVideoChunk(chunk, meta); },
-    error: function(e) { encoderError = e; console.error("VideoEncoder:", e); }
-  });
-  // avc1.4D4028 = H.264 Main Profile Level 4.0, required for 1920×1080 @ 30fps.
-  // avc1.42E01F (Baseline Level 3.1) only supports up to 1280×720 and causes
-  // "Encoding task failed" on iOS Safari's strict hardware encoder.
-  // latencyMode is omitted intentionally — it defaults to a compatible mode on
-  // all platforms and 'quality' has caused runtime failures on iOS VideoToolbox.
-  var baseConfig = {
-    codec: 'avc1.4D4028',
-    width: WIDTH,
-    height: HEIGHT,
-    bitrate: 8000000,
-  };
-  if (typeof VideoEncoder.isConfigSupported === 'function') {
-    var support = await VideoEncoder.isConfigSupported(baseConfig);
-    if (!support.supported) {
-      throw new Error("H.264 encoding at 1920×1080 is not supported in this browser. Use the Chroma Kit (.zip) fallback instead.");
-    }
-  }
-  encoder.configure(baseConfig);
-
-  // iOS Safari's hardware encoder (VideoToolbox) rejects VideoFrame objects with
-  // very long durations (e.g. a 30-second blank or score hold). Cap at 2 seconds.
-  // One canvas render per score change; multiple short VideoFrames per render.
-  var MAX_CHUNK_US = 2000000; // 2 seconds in microseconds
-  var hasBlank = entries[0].start > 0;
-  var total = entries.length + (hasBlank ? 1 : 0);
-  var done = 0;
-
-  // Blank green frame(s) covering the gap before the first score event.
-  // createImageBitmap() is used instead of passing the canvas directly to
-  // VideoFrame: Safari's WebKit handles ImageBitmap→VideoFrame more reliably
-  // than HTMLCanvasElement→VideoFrame, and the await naturally yields to the
-  // event loop so encoder errors surface immediately.
-  if (hasBlank) {
-    renderOverlayFrame(ctx, null, WIDTH, HEIGHT, positionTop);
-    var blankBitmap = await createImageBitmap(canvas);
-    var blankEndUs = Math.round(entries[0].start * 1000000);
-    var bts = 0, blankKey = true;
-    while (bts < blankEndUs) {
-      var bdur = Math.min(MAX_CHUNK_US, blankEndUs - bts);
-      var blankVf = new VideoFrame(blankBitmap, { timestamp: bts, duration: bdur });
-      encoder.encode(blankVf, { keyFrame: blankKey });
-      blankVf.close();
-      bts += bdur;
-      blankKey = false;
-    }
-    blankBitmap.close();
-    done++;
-    if (onProgress) onProgress(Math.round(done * 100 / total));
-    if (encoderError) throw encoderError;
-  }
-
-  // One canvas render per score change, chunked into ≤2-second VideoFrames.
-  // The await createImageBitmap() on each entry yields to the event loop,
-  // keeping the UI responsive and surfacing encoder errors promptly.
-  for (var j = 0; j < entries.length; j++) {
-    if (encoderError) throw encoderError;
-    var e = entries[j];
-    renderOverlayFrame(ctx, e, WIDTH, HEIGHT, positionTop);
-    var entryBitmap = await createImageBitmap(canvas);
-    var ets = Math.round(e.start * 1000000);
-    var ete = Math.round(e.end * 1000000);
-    var ekey = true;
-    while (ets < ete) {
-      var edur = Math.min(MAX_CHUNK_US, ete - ets);
-      var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
-      encoder.encode(vf, { keyFrame: ekey });
-      vf.close();
-      ets += edur;
-      ekey = false;
-    }
-    entryBitmap.close();
-    done++;
-    if (onProgress) onProgress(Math.round(done * 100 / total));
-  }
-
-  await encoder.flush();
-  if (encoderError) throw encoderError;
-  muxer.finalize();
-  return target.buffer;
-}
-
-// CRC32 lookup table
-var crc32Table = null;
-function crc32(bytes) {
-  if (!crc32Table) {
-    crc32Table = new Uint32Array(256);
-    for (var i = 0; i < 256; i++) {
-      var c = i;
-      for (var j = 0; j < 8; j++) {
-        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      }
-      crc32Table[i] = c;
-    }
-  }
-  var crc = 0xFFFFFFFF;
-  for (var k = 0; k < bytes.length; k++) {
-    crc = crc32Table[(crc ^ bytes[k]) & 0xFF] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
 </script>
 <script type="text/babel">
-const { useState, useRef, useCallback } = React;
+const { useState, useRef, useCallback, useEffect } = React;
+
 function VolleyballTracker() {
   const [screen, setScreen] = useState(SCREEN.SETUP);
   const [state, setState] = useState(createInitialState);
@@ -953,13 +1136,40 @@ function VolleyballTracker() {
   const [isEncoding, setIsEncoding] = useState(false);
   const [encodeProgress, setEncodeProgress] = useState(0);
   const [overlayPositionTop, setOverlayPositionTop] = useState(true);
+  const [mp4Error, setMp4Error] = useState(null);
 
-  const startMatch = useCallback(() => {
+  // CSV import state
+  const [csvText, setCsvText] = useState("");
+  const [csvParseResult, setCsvParseResult] = useState(null);
+  const [csvIsEncoding, setCsvIsEncoding] = useState(false);
+  const [csvEncodeProgress, setCsvEncodeProgress] = useState(0);
+  const [csvPositionTop, setCsvPositionTop] = useState(true);
+
+  // Autosave indicator
+  const [showAutosaved, setShowAutosaved] = useState(false);
+
+  // Check for autosave on mount
+  useEffect(function() {
+    var saved = loadAutosave();
+    if (saved && saved.matchStarted) {
+      setConfirmAction("restore");
+      window.__scorelayer_autosave = saved;
+    }
+  }, []);
+
+  // Autosave on every state change during match
+  useEffect(function() {
+    if (state.matchStarted && state.pointLog.length > 0) {
+      autosaveState(state);
+    }
+  }, [state]);
+
+  const startMatch = useCallback(function() {
     setState(function(s) { return { ...s, matchStarted: true, teamA: s.teamA.trim() || "Home", teamB: s.teamB.trim() || "Away" }; });
     setScreen(SCREEN.MATCH);
   }, []);
 
-  const handleSync = useCallback(() => {
+  const handleSync = useCallback(function() {
     setState(function(s) { return { ...s, syncTimestamp: Date.now() }; });
   }, []);
 
@@ -984,7 +1194,7 @@ function VolleyballTracker() {
     });
   }, []);
 
-  var reducePoint = useCallback(function(team) {
+  const reducePoint = useCallback(function(team) {
     setState(function(s) {
       if (s.matchOver) return s;
       var pts = team === "A" ? s.pointsA : s.pointsB;
@@ -997,7 +1207,7 @@ function VolleyballTracker() {
     });
   }, []);
 
-  var undoLastPoint = useCallback(function() {
+  const undoLastPoint = useCallback(function() {
     setState(function(s) {
       if (s.pointLog.length === 0) return s;
       var newLog = s.pointLog.slice(0, -1);
@@ -1023,15 +1233,63 @@ function VolleyballTracker() {
     });
   }, []);
 
-  var resetMatch = useCallback(function() {
+  const resetMatch = useCallback(function() {
     setState(createInitialState());
     setScreen(SCREEN.SETUP);
     setShowLog(false);
     setConfirmAction(null);
     setExportModal(null);
+    setMp4Error(null);
+    clearAutosave();
   }, []);
 
-  // --- Export ---
+  const restoreAutosave = useCallback(function() {
+    var saved = window.__scorelayer_autosave;
+    if (saved) {
+      setState(saved);
+      setScreen(SCREEN.MATCH);
+      delete window.__scorelayer_autosave;
+    }
+    setConfirmAction(null);
+  }, []);
+
+  // --- Share/download helper ---
+  function shareOrDownload(blob, filename, mimeType) {
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (isIOS && navigator.share && navigator.canShare) {
+      var file = new File([blob], filename, { type: mimeType });
+      if (navigator.canShare({ files: [file] })) {
+        navigator.share({ title: "ScoreLayer Export", files: [file] }).catch(function(err) {
+          if (err.name !== "AbortError") blobDownloadFallback(blob, filename);
+        });
+        return;
+      }
+    }
+    blobDownloadFallback(blob, filename);
+  }
+
+  function blobDownloadFallback(blob, filename) {
+    try {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+    } catch (e) {
+      var reader = new FileReader();
+      reader.onload = function() {
+        var w = window.open(reader.result, "_blank");
+        if (!w) window.alert("Download blocked. Please allow pop-ups.");
+      };
+      reader.readAsDataURL(blob);
+    }
+  }
+
+  // --- Export functions ---
   function openExport(type) {
     var content = "";
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB;
@@ -1072,89 +1330,89 @@ function VolleyballTracker() {
     ]);
     var blob = new Blob([zipBytes], { type: "application/zip" });
     var zipFilename = fname + "_chroma_kit.zip";
-
-    // Web Share API: iOS Safari only.
-    // Mac Safari also supports navigator.share() with files but triggers
-    // BOTH the share sheet AND a background download → duplicate file bug.
-    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    if (isIOS && navigator.share && navigator.canShare) {
-      var file = new File([blob], zipFilename, { type: "application/zip" });
-      if (navigator.canShare({ files: [file] })) {
-        navigator.share({
-          title: "ScoreLayer Chroma Kit",
-          files: [file]
-        }).catch(function(err) {
-          if (err.name !== "AbortError") {
-            blobDownloadFallback(blob, zipFilename);
-          }
-        });
-        return;
-      }
-    }
-
-    // Desktop (Mac Safari, Chrome, Firefox) → direct blob download.
-    blobDownloadFallback(blob, zipFilename);
+    shareOrDownload(blob, zipFilename, "application/zip");
   }
 
-  function blobDownloadFallback(blob, filename) {
-    try {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
-    } catch (e) {
-      var reader = new FileReader();
-      reader.onload = function() {
-        var w = window.open(reader.result, "_blank");
-        if (!w) {
-          window.alert("Download blocked. Please allow pop-ups for this site, or use the individual export buttons below.");
-        }
-      };
-      reader.readAsDataURL(blob);
-    }
+  function downloadCSV() {
+    var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+    var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB + ".csv";
+    var blob = new Blob([content], { type: "text/csv" });
+    shareOrDownload(blob, fname, "text/csv");
   }
 
+  // --- MP4 generation with pre-flight safety ---
   async function handleGenerateMP4() {
-    if (typeof VideoEncoder === 'undefined') {
-      window.alert("Your browser does not support WebCodecs. Use the Chroma Kit (.zip) fallback below.");
+    if (isEncoding) return;
+
+    // Pre-flight: auto-download CSV as safety backup
+    try { downloadCSV(); } catch (e) { /* non-blocking */ }
+    await new Promise(function(r) { setTimeout(r, 500); });
+
+    var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+    if (entries.length === 0) {
+      window.alert("No sync point set or no points recorded.");
       return;
     }
-    if (!window.Mp4Muxer) {
-      window.alert("MP4 muxer is still loading. Please try again in a moment.");
-      return;
-    }
+
     setIsEncoding(true);
     setEncodeProgress(0);
-    try {
-      var mp4Buffer = await generateOverlayMP4(
-        state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle,
-        function(pct) { setEncodeProgress(pct); },
-        overlayPositionTop
-      );
-      setIsEncoding(false);
-      var blob = new Blob([mp4Buffer], { type: 'video/mp4' });
-      var filename = 'scorelayer_' + state.teamA + '_vs_' + state.teamB + '_overlay.mp4';
-      var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-      if (isIOS && navigator.share && navigator.canShare) {
-        var file = new File([blob], filename, { type: 'video/mp4' });
-        if (navigator.canShare({ files: [file] })) {
-          navigator.share({ title: 'ScoreLayer Overlay', files: [file] }).catch(function(err) {
-            if (err.name !== 'AbortError') blobDownloadFallback(blob, filename);
-          });
-          return;
-        }
-      }
-      blobDownloadFallback(blob, filename);
-    } catch(err) {
-      console.error('MP4 generation failed:', err);
-      window.alert('MP4 generation failed: ' + (err.message || err));
-      setIsEncoding(false);
-      setEncodeProgress(0);
+    setMp4Error(null);
+
+    var result = await generateOverlayMP4(entries, state.teamA, state.teamB, overlayPositionTop, function(pct) {
+      setEncodeProgress(pct);
+    });
+
+    setIsEncoding(false);
+
+    if (result.success) {
+      setEncodeProgress(100);
+      shareOrDownload(result.blob, result.filename, "video/mp4");
+    } else {
+      setMp4Error(result);
+    }
+  }
+
+  // --- CSV Import handlers ---
+  function handleCSVTextChange(e) {
+    var text = e.target.value;
+    setCsvText(text);
+    if (text.trim().length > 20) {
+      setCsvParseResult(parseCSVToEntries(text));
+    } else {
+      setCsvParseResult(null);
+    }
+  }
+
+  function handleCSVFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      var text = reader.result;
+      setCsvText(text);
+      setCsvParseResult(parseCSVToEntries(text));
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleCSVGenerateMP4() {
+    if (!csvParseResult || !csvParseResult.entries || csvIsEncoding) return;
+
+    setCsvIsEncoding(true);
+    setCsvEncodeProgress(0);
+
+    var result = await generateOverlayMP4(
+      csvParseResult.entries, csvParseResult.teamA, csvParseResult.teamB,
+      csvPositionTop, function(pct) { setCsvEncodeProgress(pct); }
+    );
+
+    setCsvIsEncoding(false);
+
+    if (result.success) {
+      setCsvEncodeProgress(100);
+      shareOrDownload(result.blob, result.filename, "video/mp4");
+    } else {
+      setMp4Error(result);
     }
   }
 
@@ -1164,12 +1422,8 @@ function VolleyballTracker() {
       navigator.clipboard.writeText(exportModal.content).then(function() {
         setCopyFeedback("Copied to clipboard!");
         setTimeout(function() { setCopyFeedback(""); }, 3000);
-      }, function() {
-        fallbackCopy();
-      });
-    } catch (e) {
-      fallbackCopy();
-    }
+      }, function() { fallbackCopy(); });
+    } catch (e) { fallbackCopy(); }
   }
   function fallbackCopy() {
     var ta = document.createElement("textarea");
@@ -1178,12 +1432,7 @@ function VolleyballTracker() {
     document.body.appendChild(ta);
     ta.select();
     ta.setSelectionRange(0, ta.value.length);
-    try {
-      document.execCommand("copy");
-      setCopyFeedback("Copied to clipboard!");
-    } catch (e) {
-      setCopyFeedback("Select the text above and copy manually.");
-    }
+    try { document.execCommand("copy"); setCopyFeedback("Copied to clipboard!"); } catch (e) { setCopyFeedback("Select the text above and copy manually."); }
     document.body.removeChild(ta);
     setTimeout(function() { setCopyFeedback(""); }, 4000);
   }
@@ -1198,10 +1447,16 @@ function VolleyballTracker() {
   return (
     <div className="app">
       <div className="header">
-        <h1>Volley Track</h1>
-        {screen === SCREEN.MATCH && !state.matchOver && <div className="live-dot" />}
+        <h1>ScoreLayer Volley</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {screen === SCREEN.MATCH && !state.matchOver && <div className="live-dot" />}
+          {screen === SCREEN.SETUP && (
+            <button className="btn btn-small" onClick={function() { setScreen(SCREEN.CSV_IMPORT); }} style={{ fontSize: 10 }}>Import CSV</button>
+          )}
+        </div>
       </div>
 
+      {/* ========== SETUP SCREEN ========== */}
       {screen === SCREEN.SETUP && (
         <div className="setup">
           <div className="setup-title">Match Setup</div>
@@ -1215,12 +1470,58 @@ function VolleyballTracker() {
             <input type="text" value={state.teamB} placeholder="Away" onChange={function(e) { var v = e.target.value; setState(function(s) { return { ...s, teamB: v }; }); }} />
           </div>
           <div className="format-info">
-            Tap <strong>+</strong> to score, <strong>&minus;</strong> to correct. Press <strong>SYNC</strong> at a known video moment (e.g. first serve or video recording start) to align timestamps.
+            Tap <strong>+</strong> to score, <strong>&minus;</strong> to correct. Press <strong>SYNC</strong> at a known video moment to align timestamps. Match data is auto-saved.
           </div>
           <button className="btn btn-primary" onClick={startMatch}>Start Match</button>
         </div>
       )}
 
+      {/* ========== CSV IMPORT SCREEN ========== */}
+      {screen === SCREEN.CSV_IMPORT && (
+        <div className="csv-import">
+          <div className="csv-import-title">Import CSV</div>
+          <div className="csv-import-subtitle">Generate overlay MP4 from a previously exported CSV</div>
+          <div className="file-picker-row">
+            <button className="btn btn-secondary" onClick={function() { document.getElementById('csv-file-input').click(); }}>Choose CSV File</button>
+            <input type="file" id="csv-file-input" accept=".csv,text/csv" onChange={handleCSVFile} />
+            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>or paste below</span>
+          </div>
+          <textarea
+            value={csvText}
+            onChange={handleCSVTextChange}
+            placeholder={"Paste CSV content here...\n\nExpected columns:\nIndex,WallClock,VideoOffset_ms,Set,PointsA,PointsB,ScoringTeam,Correction,ScoreDisplay"}
+          />
+          {csvParseResult && csvParseResult.error && (
+            <div className="parsed-info parsed-error">{csvParseResult.error}</div>
+          )}
+          {csvParseResult && csvParseResult.entries && (
+            <>
+              <div className="parsed-info">
+                Parsed <strong>{csvParseResult.rowCount}</strong> score entries for <strong>{csvParseResult.teamA}</strong> vs <strong>{csvParseResult.teamB}</strong>.
+                Duration: ~{Math.ceil(csvParseResult.entries[csvParseResult.entries.length - 1].end)}s
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "var(--text-dim)", letterSpacing: 1 }}>POSITION:</span>
+                <div className="position-toggle">
+                  <button className={csvPositionTop ? "active" : ""} onClick={function() { setCsvPositionTop(true); }}>&#8593; Top</button>
+                  <button className={!csvPositionTop ? "active" : ""} onClick={function() { setCsvPositionTop(false); }}>&#8595; Bottom</button>
+                </div>
+              </div>
+              <button className="btn btn-success" onClick={handleCSVGenerateMP4} disabled={csvIsEncoding}>
+                {csvIsEncoding ? "Generating\u2026 " + csvEncodeProgress + "%" : "Generate Overlay MP4"}
+              </button>
+              {csvIsEncoding && (
+                <div className="progress-bar-track">
+                  <div className="progress-bar-fill" style={{ width: csvEncodeProgress + "%" }} />
+                </div>
+              )}
+            </>
+          )}
+          <button className="btn btn-small" onClick={function() { setScreen(SCREEN.SETUP); setCsvText(""); setCsvParseResult(null); }} style={{ marginTop: 8 }}>&#8592; Back to Setup</button>
+        </div>
+      )}
+
+      {/* ========== MATCH SCREEN (LIVE) ========== */}
       {screen === SCREEN.MATCH && !state.matchOver && (
         <div className="match">
           <div className={"sync-bar" + (state.syncTimestamp ? "" : " sync-bar-alert")}>
@@ -1245,7 +1546,7 @@ function VolleyballTracker() {
             </div>
             <div style={{ textAlign: "center" }}>
               <div className="set-label">Sets</div>
-              <div className="set-divider">—</div>
+              <div className="set-divider">&#8212;</div>
             </div>
             <div style={{ textAlign: "center" }}>
               <div className="set-label">{state.teamB}</div>
@@ -1281,6 +1582,7 @@ function VolleyballTracker() {
             <button className="btn btn-small" onClick={function() { setShowLog(function(v) { return !v; }); }}>
               {showLog ? "Hide Log" : "Show Log"} ({state.pointLog.length})
             </button>
+            {state.pointLog.length > 0 && <span className="autosave-badge">auto-saved</span>}
             <button className="btn btn-danger" onClick={function() { setConfirmAction("end"); }}>End Match</button>
           </div>
 
@@ -1304,35 +1606,37 @@ function VolleyballTracker() {
         </div>
       )}
 
+      {/* ========== MATCH OVER SCREEN ========== */}
       {screen === SCREEN.MATCH && state.matchOver && (
         <div className="match-over">
           <div style={{ fontSize: 12, letterSpacing: 3, color: "var(--text-dim)", textTransform: "uppercase" }}>Match Complete</div>
           <div className="winner">{state.setsA > state.setsB ? state.teamA : state.teamB} Wins</div>
           <div className="final-score">
             <span style={{ color: "var(--team-a)" }}>{state.setsA}</span>
-            <span style={{ color: "var(--text-dim)", margin: "0 8px" }}>—</span>
+            <span style={{ color: "var(--text-dim)", margin: "0 8px" }}>&#8212;</span>
             <span style={{ color: "var(--team-b)" }}>{state.setsB}</span>
           </div>
           <div className="set-details">
-            {state.setHistory.map(function(sh, i) { return <div key={i}>Set {i + 1}: {sh.scoreA}–{sh.scoreB}</div>; })}
+            {state.setHistory.map(function(sh, i) { return <div key={i}>Set {i + 1}: {sh.scoreA}&#8211;{sh.scoreB}</div>; })}
           </div>
 
           {!state.syncTimestamp && (
             <div className="format-info" style={{ maxWidth: 300, textAlign: "center" }}>
-              No sync point was set. SRT/FCPXML exports require sync. CSV with wall-clock timestamps is still available.
+              No sync point was set. SRT/FCPXML/MP4 exports require sync. CSV with wall-clock timestamps is still available.
             </div>
           )}
 
           <div className="export-buttons">
-            <button className="btn btn-primary" onClick={function() { openExport("srt"); }} disabled={!state.syncTimestamp}>Export SRT (Subtitles)</button>
+            {/* === SAFE EXPORTS FIRST === */}
+            <button className="btn btn-primary" onClick={function() { openExport("csv"); }}>Export CSV (Raw Data)</button>
+            <button className="btn btn-secondary" onClick={function() { openExport("srt"); }} disabled={!state.syncTimestamp}>Export SRT (Subtitles)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("fcpxml"); }} disabled={!state.syncTimestamp}>Export FCPXML (Final Cut)</button>
-            <button className="btn btn-secondary" onClick={function() { openExport("csv"); }}>Export CSV (Raw Data)</button>
 
             <div style={{ width: "100%", borderTop: "1px solid var(--surface2)", margin: "6px 0", paddingTop: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", color: "var(--accent)", textAlign: "center", marginBottom: 8 }}>Chroma Key Video</div>
             </div>
 
-            {/* Match title field — applied to the overlay info row */}
+            {/* Match title field */}
             <div className="title-input-wrap">
               <label>Overlay Title</label>
               <input
@@ -1344,24 +1648,29 @@ function VolleyballTracker() {
               <span className="hint">Shown left of Set # in the overlay. Leave blank to omit.</span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <span style={{ fontSize: 11, letterSpacing: 1, color: "var(--muted)", textTransform: "uppercase" }}>Subtitle Position</span>
-              <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--surface2)" }}>
-                <button onClick={function() { setOverlayPositionTop(true); }} disabled={isEncoding} style={{ padding: "4px 14px", border: "none", cursor: "pointer", fontSize: 12, background: overlayPositionTop ? "#16a34a" : "var(--surface2)", color: overlayPositionTop ? "#fff" : "var(--muted)" }}>↑ Top</button>
-                <button onClick={function() { setOverlayPositionTop(false); }} disabled={isEncoding} style={{ padding: "4px 14px", border: "none", cursor: "pointer", fontSize: 12, background: !overlayPositionTop ? "#16a34a" : "var(--surface2)", color: !overlayPositionTop ? "#fff" : "var(--muted)" }}>↓ Bottom</button>
+            {/* Position toggle */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--text-dim)", letterSpacing: 1 }}>POSITION:</span>
+              <div className="position-toggle">
+                <button className={overlayPositionTop ? "active" : ""} onClick={function() { setOverlayPositionTop(true); }}>&#8593; Top</button>
+                <button className={!overlayPositionTop ? "active" : ""} onClick={function() { setOverlayPositionTop(false); }}>&#8595; Bottom</button>
               </div>
             </div>
-            <button className="btn btn-primary" style={{ background: "#16a34a", boxShadow: "0 4px 20px rgba(22,163,74,0.3)" }} onClick={handleGenerateMP4} disabled={!state.syncTimestamp || isEncoding}>
+
+            <button className="btn btn-success" onClick={handleGenerateMP4} disabled={!state.syncTimestamp || isEncoding}>
               {isEncoding ? "Generating\u2026 " + encodeProgress + "%" : "Generate Overlay MP4"}
             </button>
             {isEncoding && (
-              <div style={{ width: "100%", background: "var(--surface2)", borderRadius: 4, overflow: "hidden", height: 6 }}>
-                <div style={{ width: encodeProgress + "%", height: "100%", background: "#16a34a", transition: "width 0.2s" }} />
+              <div className="progress-bar-track">
+                <div className="progress-bar-fill" style={{ width: encodeProgress + "%" }} />
               </div>
             )}
-            <button className="btn btn-small" onClick={downloadChromaKit} disabled={!state.syncTimestamp || isEncoding}>
-              ↓ Chroma Kit (.zip fallback)
-            </button>
+
+            <div className="format-info" style={{ fontSize: 11, textAlign: "center" }}>
+              CSV is auto-downloaded first as a safety backup. If MP4 generation fails, use the Chroma Kit or import the CSV later.
+            </div>
+
+            <button className="btn btn-secondary" onClick={downloadChromaKit} disabled={!state.syncTimestamp}>&#8595; Chroma Kit (.zip fallback)</button>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
               <button className="btn btn-small" style={{ flex: 1 }} onClick={function() { openExport("ass"); }} disabled={!state.syncTimestamp}>View ASS</button>
               <button className="btn btn-small" style={{ flex: 1 }} onClick={function() { openExport("chroma"); }} disabled={!state.syncTimestamp}>View Script</button>
@@ -1371,6 +1680,7 @@ function VolleyballTracker() {
         </div>
       )}
 
+      {/* ========== EXPORT MODAL ========== */}
       {exportModal && (
         <div className="export-modal-overlay" onClick={function() { setExportModal(null); }}>
           <div className="export-modal" onClick={function(e) { e.stopPropagation(); }}>
@@ -1388,7 +1698,30 @@ function VolleyballTracker() {
         </div>
       )}
 
-      {confirmAction && (
+      {/* ========== MP4 ERROR RECOVERY MODAL ========== */}
+      {mp4Error && (
+        <div className="error-modal-overlay" onClick={function() { setMp4Error(null); }}>
+          <div className="error-modal" onClick={function(e) { e.stopPropagation(); }}>
+            <h3>MP4 Generation Failed</h3>
+            <p>The video encoder ran into a problem. Your match data is safe. Use one of the options below:</p>
+            {mp4Error.detail && <div className="error-detail">{mp4Error.detail}</div>}
+            <div className="error-detail">{mp4Error.error}</div>
+            <div className="error-actions">
+              {state.syncTimestamp && (
+                <button className="btn btn-secondary" onClick={function() { setMp4Error(null); downloadChromaKit(); }}>&#8595; Download Chroma Kit (.zip)</button>
+              )}
+              <button className="btn btn-secondary" onClick={function() { setMp4Error(null); downloadCSV(); }}>&#8595; Download CSV</button>
+              <div className="format-info" style={{ fontSize: 11, textAlign: "center" }}>
+                You can re-generate the MP4 later by importing the CSV via the <strong>Import CSV</strong> button on the setup screen.
+              </div>
+              <button className="btn btn-small" onClick={function() { setMp4Error(null); }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== CONFIRM DIALOGS ========== */}
+      {confirmAction && confirmAction !== "restore" && (
         <div className="confirm-overlay" onClick={function() { setConfirmAction(null); }}>
           <div className="confirm-dialog" onClick={function(e) { e.stopPropagation(); }}>
             <h3>{confirmAction === "end" ? "End Match Early?" : "Start New Match?"}</h3>
@@ -1401,6 +1734,20 @@ function VolleyballTracker() {
                 } else { resetMatch(); }
                 setConfirmAction(null);
               }}>{confirmAction === "end" ? "End Match" : "Reset"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== RESTORE AUTOSAVE DIALOG ========== */}
+      {confirmAction === "restore" && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog">
+            <h3>Restore Match?</h3>
+            <p>A previous match was found in auto-save. Would you like to restore it or start fresh?</p>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={function() { delete window.__scorelayer_autosave; clearAutosave(); setConfirmAction(null); }}>Discard</button>
+              <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={restoreAutosave}>Restore</button>
             </div>
           </div>
         </div>
