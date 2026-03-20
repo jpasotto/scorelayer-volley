@@ -845,6 +845,8 @@ function parseCSVToEntries(csvText, matchTitle) {
   var iSA = cols.indexOf("SetsA");
   var iSB = cols.indexOf("SetsB");
   var iTitle = cols.indexOf("MatchTitle");
+  var iHL = cols.indexOf("Highlight");
+  var iHLNote = cols.indexOf("HighlightNote");
 
   if (iOffset === -1 || iSet === -1 || iPA === -1 || iPB === -1) {
     return { error: "CSV missing required columns: VideoOffset_ms, Set, PointsA, PointsB" };
@@ -881,6 +883,8 @@ function parseCSVToEntries(csvText, matchTitle) {
       pointsB: parseInt(row[iPB], 10) || 0,
       setsA: hasSetsColumns ? (parseInt(row[iSA], 10) || 0) : -1,
       setsB: hasSetsColumns ? (parseInt(row[iSB], 10) || 0) : -1,
+      highlight: iHL !== -1 && row[iHL] && row[iHL].trim() === "Y",
+      highlightNote: iHLNote !== -1 ? (row[iHLNote] || "").replace(/"/g, "").trim() || null : null,
     });
   }
 
@@ -896,6 +900,7 @@ function parseCSVToEntries(csvText, matchTitle) {
 
   // Build entries — use exact SetsA/SetsB from CSV when available, otherwise infer from set transitions
   var entries = [];
+  var pointLog = [];
   var setsA = 0, setsB = 0, prevSetNum = 0, prevPointsA = 0, prevPointsB = 0;
   for (var j = 0; j < dataRows.length; j++) {
     var d = dataRows[j];
@@ -921,11 +926,23 @@ function parseCSVToEntries(csvText, matchTitle) {
       score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
       set_info: "Set " + d.setNum,
       title: title,
-      sets_score: "Sets " + setsA + ":" + setsB
+      sets_score: "Sets " + setsA + ":" + setsB,
+      highlight: d.highlight || false,
+      highlightNote: d.highlightNote || null,
+    });
+    // pointLog uses timestamp=offset_ms so generateYouTubeChapters/generateHighlightsSRT work with syncTimestamp=0
+    pointLog.push({
+      timestamp: d.offset_ms,
+      pointsA: d.pointsA,
+      pointsB: d.pointsB,
+      setNum: d.setNum,
+      highlight: d.highlight || false,
+      highlightNote: d.highlightNote || null,
     });
   }
 
-  return { entries: entries, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
+  var highlightCount = pointLog.filter(function(p) { return p.highlight; }).length;
+  return { entries: entries, pointLog: pointLog, highlightCount: highlightCount, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
 }
 
 function parseCSVRow(line) {
@@ -1754,6 +1771,23 @@ function VolleyballTracker() {
               {csvIsEncoding && (
                 <div className="progress-bar-track">
                   <div className="progress-bar-fill" style={{ width: csvEncodeProgress + "%" }} />
+                </div>
+              )}
+              {csvParseResult.highlightCount > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  <div className="highlight-section-label">{"\u2605"} {csvParseResult.highlightCount} highlight{csvParseResult.highlightCount !== 1 ? "s" : ""} in CSV</div>
+                  <button className="btn btn-secondary" onClick={function() {
+                    var content = generateHighlightsSRT(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
+                    if (!content) { window.alert("No highlights found."); return; }
+                    var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_highlights.srt";
+                    setExportModal({ type: "hlsrt", content: content, filename: fname });
+                  }}>Export Highlights SRT</button>
+                  <button className="btn btn-secondary" onClick={function() {
+                    var content = generateYouTubeChapters(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
+                    if (!content) { window.alert("No highlights found."); return; }
+                    var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_chapters.txt";
+                    setExportModal({ type: "chapters", content: content, filename: fname });
+                  }}>Export YouTube Chapters</button>
                 </div>
               )}
             </>
