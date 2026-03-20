@@ -135,6 +135,21 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .csv-import .parsed-info { background: var(--surface); border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--text-dim); line-height: 1.5; border-left: 3px solid var(--success); }
   .csv-import .parsed-error { border-left-color: var(--team-b); }
   .autosave-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-family: var(--font-mono); color: var(--success); letter-spacing: 0.5px; }
+.highlight-pill { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 18px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--warning); cursor: pointer; transition: all 0.2s ease; animation: fadeIn 0.2s ease; }
+.highlight-pill.confirmed { background: rgba(234, 179, 8, 0.15); }
+.highlight-pill.expanded { gap: 6px; padding: 6px 12px; }
+.highlight-pill .hl-star { color: var(--warning); font-size: 16px; line-height: 1; }
+.highlight-pill .hl-text { font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); font-family: var(--font-display); }
+.highlight-pill .hl-text.marked { color: var(--warning); }
+.highlight-pill .hl-input { background: var(--bg); border: 1px solid var(--surface2); border-radius: 6px; padding: 4px 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text); outline: none; width: 120px; max-width: 120px; }
+.highlight-pill .hl-input::placeholder { color: var(--text-dim); }
+.highlight-pill .hl-input:focus { border-color: var(--warning); }
+.highlight-pill .hl-done { background: var(--warning); color: #000; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; font-family: var(--font-display); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.log-entry.is-highlight { background: rgba(234, 179, 8, 0.05); }
+.log-entry .log-highlight { color: var(--warning); min-width: 16px; font-size: 14px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.log-entry .log-hl-note { color: var(--warning); font-size: 10px; font-style: italic; }
+.highlight-section-label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--warning); text-align: center; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -240,7 +255,9 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
     if (startMs < 0) continue;
     lines.push(String(idx));
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
-    lines.push("Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB);
+    var hlPrefix = p.highlight ? "\u2605 " : "";
+    var hlSuffix = (p.highlight && p.highlightNote) ? " [" + p.highlightNote + "]" : "";
+    lines.push(hlPrefix + "Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB + hlSuffix);
     lines.push("");
     idx++;
   }
@@ -248,11 +265,12 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
 }
 
 function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
-  var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,MatchTitle,ScoreDisplay";
+  var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay";
   var rows = pointLog.map(function(p, i) {
     var offset = syncTimestamp ? p.timestamp - syncTimestamp : "";
     var title = (matchTitle || "").replace(/"/g, '""');
-    return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.setsA || 0, p.setsB || 0, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", '"' + title + '"', '"' + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
+    var displayPrefix = p.highlight ? "\u2605 " : "";
+    return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.setsA || 0, p.setsB || 0, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", p.highlight ? "Y" : "N", '"' + ((p.highlightNote || "").replace(/"/g, '""')) + '"', '"' + title + '"', '"' + displayPrefix + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
   });
   return [header].concat(rows).join("\n");
 }
@@ -273,6 +291,16 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
     titles += '              <text><text-style ref="ts1">' + text + '</text-style></text>\n';
     titles += '            </title>\n';
   }
+  var markers = "";
+  for (var m = 0; m < pointLog.length; m++) {
+    var pm = pointLog[m];
+    if (!pm.highlight) continue;
+    var markerMs = pm.timestamp - syncTimestamp;
+    if (markerMs < 0) continue;
+    var markerText = "\u2605 Set " + pm.setNum + " | " + teamA + " " + pm.pointsA + " - " + pm.pointsB + " " + teamB;
+    if (pm.highlightNote) markerText += " [" + pm.highlightNote + "]";
+    markers += '            <marker start="' + toFrac(markerMs) + '" duration="100/' + (fps * 100) + 's" value="' + markerText.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;") + '" />\n';
+  }
   var totalDur = pointLog[pointLog.length - 1].timestamp - syncTimestamp + 10000;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -287,7 +315,7 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
     '        <sequence format="r1" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
     '          <spine>',
     '            <gap name="Gap" offset="0s" duration="' + toFrac(totalDur) + '" start="0s">',
-    titles,
+    titles + markers,
     '            </gap>',
     '          </spine>',
     '        </sequence>',
@@ -325,6 +353,8 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
     // Score: large, bold, bottom-center (Alignment=2)
     "Style: Score,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,3,2,2,40,40,50,1",
+    // ScoreHL: highlight style — gold text (ASS BGR: #eae000 → &H0000E0EA)
+    "Style: ScoreHL,Arial,72,&H0000E0EA,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,3,2,2,40,40,50,1",
     // SetInfo: same size/colour as in the original, bottom-center default but overridden with \an+\pos per dialogue
     "Style: SetInfo,Arial,36,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,2,1,2,40,40,50,1",
     "",
@@ -343,7 +373,8 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
 
     // Bottom score line - large, centered
     var scoreText = teamA + "  " + p.pointsA + "  -  " + p.pointsB + "  " + teamB;
-    events.push("Dialogue: 0," + startT + "," + endT + ",Score,,0,0,0,," + scoreText);
+    var scoreStyle = p.highlight ? "ScoreHL" : "Score";
+    events.push("Dialogue: 0," + startT + "," + endT + "," + scoreStyle + ",,0,0,0,," + scoreText);
 
     // Info row - three positioned elements on same Y level (y=900, i.e. 130px above score baseline)
     // \an1 = bottom-left anchor, \an2 = bottom-center, \an3 = bottom-right
@@ -357,6 +388,52 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
     events.push("Dialogue: 1," + startT + "," + endT + ",SetInfo,,0,0,0,,{\\an3\\pos(1840,900)}" + rightText);
   }
   return header + "\n" + events.join("\n") + "\n";
+}
+
+// --- YouTube Chapters export ---
+function generateYouTubeChapters(pointLog, syncTimestamp, teamA, teamB) {
+  if (!syncTimestamp) return "";
+  var lines = ["00:00 Match Start"];
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    if (!p.highlight) continue;
+    var offsetMs = p.timestamp - syncTimestamp;
+    if (offsetMs < 0) continue;
+    var totalSec = Math.floor(offsetMs / 1000);
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    var timeStr = h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
+      : m + ":" + String(s).padStart(2, "0");
+    var text = "\u2605 " + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + " (Set " + p.setNum + ")";
+    if (p.highlightNote) text += " [" + p.highlightNote + "]";
+    lines.push(timeStr + " " + text);
+  }
+  if (lines.length <= 1) return "";
+  return lines.join("\n");
+}
+
+// --- Highlights-only SRT export ---
+function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB) {
+  if (!syncTimestamp || pointLog.length === 0) return "";
+  var lines = [];
+  var idx = 1;
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    if (!p.highlight) continue;
+    var startMs = p.timestamp - syncTimestamp;
+    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+    if (startMs < 0) continue;
+    var text = "\u2605 Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
+    if (p.highlightNote) text += " [" + p.highlightNote + "]";
+    lines.push(String(idx));
+    lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
+    lines.push(text);
+    lines.push("");
+    idx++;
+  }
+  return lines.join("\n");
 }
 
 // --- Chroma Key shell script + Python frame renderer ---
@@ -383,7 +460,9 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
       score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
       set_info: "Set " + p.setNum,
       title: title,
-      sets_score: "Sets " + p.setsA + ":" + p.setsB
+      sets_score: "Sets " + p.setsA + ":" + p.setsB,
+      highlight: p.highlight || false,
+      highlightNote: p.highlightNote || null
     });
   }
 
@@ -485,6 +564,30 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
     "            for dy in range(-3, 4):",
     "                draw.text((sx + dx, sy + dy), score_text, font=font_score, fill=BLACK)",
     "        draw.text((sx, sy), score_text, font=font_score, fill=WHITE)",
+    "",
+    "        # -- Highlight star (gold) --",
+    "        if active.get('highlight'):",
+    "            GOLD = (234, 179, 8)",
+    "            star_text = '\u2605'",
+    "            star_bbox = draw.textbbox((0, 0), star_text, font=font_score)",
+    "            star_w = star_bbox[2] - star_bbox[0]",
+    "            star_x = sx - star_w - 15",
+    "            for dx in range(-3, 4):",
+    "                for dy in range(-3, 4):",
+    "                    draw.text((star_x + dx, sy + dy), star_text, font=font_score, fill=BLACK)",
+    "            draw.text((star_x, sy), star_text, font=font_score, fill=GOLD)",
+    "            hl_note = active.get('highlightNote')",
+    "            if hl_note:",
+    "                note_font = load_font(28)",
+    "                note_text = '[' + hl_note + ']'",
+    "                note_bbox = draw.textbbox((0, 0), note_text, font=note_font)",
+    "                note_w = note_bbox[2] - note_bbox[0]",
+    "                note_x = (WIDTH - note_w) // 2",
+    "                note_y = sy + 80",
+    "                for dx in range(-2, 3):",
+    "                    for dy in range(-2, 3):",
+    "                        draw.text((note_x + dx, note_y + dy), note_text, font=note_font, fill=BLACK)",
+    "                draw.text((note_x, note_y), note_text, font=note_font, fill=GOLD)",
     "",
     "        # -- Info row: [title left]  [Set N center]  [Sets A:B right] --",
     "        sy2 = HEIGHT - 180",
@@ -717,7 +820,9 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle) 
       score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
       set_info: "Set " + p.setNum,
       title: title,
-      sets_score: "Sets " + p.setsA + ":" + p.setsB
+      sets_score: "Sets " + p.setsA + ":" + p.setsB,
+      highlight: p.highlight || false,
+      highlightNote: p.highlightNote || null
     });
   }
   return entries;
@@ -895,6 +1000,44 @@ function renderOverlayFrame(ctx, entry, width, height, positionTop) {
   if (entry.sets_score) {
     ctx.textAlign = 'right';
     ctx.fillText(entry.sets_score, width - 80, infoY);
+  }
+
+  // Highlight star and note
+  if (entry.highlight) {
+    ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+    var scoreWidth = ctx.measureText(entry.score).width;
+    var starWidth = ctx.measureText('\u2605').width;
+    var starX = (width / 2) - (scoreWidth / 2) - starWidth - 10;
+
+    ctx.fillStyle = '#eab308';
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 3;
+    ctx.textAlign = 'left';
+    if (positionTop !== false) {
+      ctx.textBaseline = 'top';
+      ctx.fillText('\u2605', starX, scoreY);
+    } else {
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('\u2605', starX, scoreY);
+    }
+
+    if (entry.highlightNote) {
+      ctx.font = 'bold 28px Arial, Helvetica, sans-serif';
+      ctx.fillStyle = '#eab308';
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      if (positionTop !== false) {
+        ctx.textBaseline = 'top';
+        ctx.fillText('[' + entry.highlightNote + ']', width / 2, scoreY + 80);
+      } else {
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('[' + entry.highlightNote + ']', width / 2, height - 10);
+      }
+    }
   }
 
   ctx.shadowColor = 'transparent';
@@ -1179,6 +1322,10 @@ function VolleyballTracker() {
   // Autosave indicator
   const [showAutosaved, setShowAutosaved] = useState(false);
 
+  // Highlight pill state
+  const [highlightPrompt, setHighlightPrompt] = useState(null);
+  // Shape: { index: number, timer: timeoutId, phase: 'prompt' | 'input' | 'confirmed' } | null
+
   // Check for autosave on mount
   useEffect(function() {
     var saved = loadAutosave();
@@ -1210,7 +1357,7 @@ function VolleyballTracker() {
       var now = Date.now();
       var pointsA = s.pointsA, pointsB = s.pointsB, setsA = s.setsA, setsB = s.setsB, currentSet = s.currentSet;
       if (team === "A") pointsA++; else pointsB++;
-      var newLog = s.pointLog.concat([{ team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false }]);
+      var newLog = s.pointLog.concat([{ team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false, highlight: false, highlightNote: null }]);
       var target = getTargetPoints(setsA, setsB);
       var matchOver = false;
       var newSetHistory = s.setHistory.slice();
@@ -1233,7 +1380,7 @@ function VolleyballTracker() {
       var now = Date.now();
       var newPA = team === "A" ? s.pointsA - 1 : s.pointsA;
       var newPB = team === "B" ? s.pointsB - 1 : s.pointsB;
-      var newLog = s.pointLog.concat([{ team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true }]);
+      var newLog = s.pointLog.concat([{ team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null }]);
       return { ...s, pointsA: newPA, pointsB: newPB, pointLog: newLog };
     });
   }, []);
@@ -1263,6 +1410,40 @@ function VolleyballTracker() {
       return { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: sh, pointLog: newLog, matchOver: false };
     });
   }, []);
+
+  const toggleHighlight = useCallback(function(logIndex) {
+    setState(function(s) {
+      var entry = s.pointLog[logIndex];
+      if (!entry) return s;
+      var newLog = s.pointLog.slice();
+      if (entry.highlight) {
+        newLog[logIndex] = { ...newLog[logIndex], highlight: false, highlightNote: null };
+      } else {
+        newLog[logIndex] = { ...newLog[logIndex], highlight: true };
+      }
+      return { ...s, pointLog: newLog };
+    });
+  }, []);
+
+  const markHighlightWithNote = useCallback(function(logIndex, note) {
+    setState(function(s) {
+      var entry = s.pointLog[logIndex];
+      if (!entry) return s;
+      var newLog = s.pointLog.slice();
+      newLog[logIndex] = { ...newLog[logIndex], highlight: true, highlightNote: note || null };
+      return { ...s, pointLog: newLog };
+    });
+  }, []);
+
+  function showHighlightPill(logIndex) {
+    if (highlightPrompt && highlightPrompt.timer) {
+      clearTimeout(highlightPrompt.timer);
+    }
+    var timerId = setTimeout(function() {
+      setHighlightPrompt(null);
+    }, 4000);
+    setHighlightPrompt({ index: logIndex, timer: timerId, phase: 'prompt' });
+  }
 
   const resetMatch = useCallback(function() {
     setState(createInitialState());
@@ -1340,6 +1521,14 @@ function VolleyballTracker() {
       content = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname = "generate_overlay.sh";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
+    } else if (type === "chapters") {
+      content = generateYouTubeChapters(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      fname += "_chapters.txt";
+      if (!content) { window.alert("No highlights marked or no sync point set."); return; }
+    } else if (type === "hlsrt") {
+      content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      fname += "_highlights.srt";
+      if (!content) { window.alert("No highlights marked or no sync point set."); return; }
     } else {
       content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname += ".csv";
@@ -1483,6 +1672,9 @@ function VolleyballTracker() {
   var aAtMatchPoint = aAtSetPoint && state.setsA === SETS_TO_WIN_MATCH - 1;
   var bAtMatchPoint = bAtSetPoint && state.setsB === SETS_TO_WIN_MATCH - 1;
 
+  // --- Highlight count ---
+  var highlightCount = state.pointLog.filter(function(p) { return p.highlight; }).length;
+
   return (
     <div className="app">
       <div className="header">
@@ -1612,7 +1804,7 @@ function VolleyballTracker() {
               {aAtMatchPoint && <div className="set-point-badge match-point-badge">Match Pt</div>}
               {aAtSetPoint && !aAtMatchPoint && <div className="set-point-badge">Set Pt</div>}
               <div className="team-name">{state.teamA}</div>
-              <button className="score-btn score-btn-plus" onClick={function() { scorePoint("A"); }}>+</button>
+              <button className="score-btn score-btn-plus" onClick={function() { var idx = state.pointLog.length; scorePoint("A"); showHighlightPill(idx); }}>+</button>
               <div className="points">{state.pointsA}</div>
               <button className="score-btn score-btn-minus" onClick={function() { reducePoint("A"); }} disabled={state.pointsA <= 0}>&minus;</button>
             </div>
@@ -1620,11 +1812,62 @@ function VolleyballTracker() {
               {bAtMatchPoint && <div className="set-point-badge match-point-badge">Match Pt</div>}
               {bAtSetPoint && !bAtMatchPoint && <div className="set-point-badge">Set Pt</div>}
               <div className="team-name">{state.teamB}</div>
-              <button className="score-btn score-btn-plus" onClick={function() { scorePoint("B"); }}>+</button>
+              <button className="score-btn score-btn-plus" onClick={function() { var idx = state.pointLog.length; scorePoint("B"); showHighlightPill(idx); }}>+</button>
               <div className="points">{state.pointsB}</div>
               <button className="score-btn score-btn-minus" onClick={function() { reducePoint("B"); }} disabled={state.pointsB <= 0}>&minus;</button>
             </div>
           </div>
+
+          {highlightPrompt && highlightPrompt.phase !== 'done' && !state.matchOver && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 16px' }}>
+              {highlightPrompt.phase === 'prompt' && (
+                <div className="highlight-pill" onClick={function() {
+                  if (highlightPrompt.timer) clearTimeout(highlightPrompt.timer);
+                  markHighlightWithNote(highlightPrompt.index, null);
+                  setHighlightPrompt(function(hp) { return { ...hp, phase: 'input', timer: null }; });
+                }}>
+                  <span className="hl-star">&#9734;</span>
+                  <span className="hl-text">Highlight</span>
+                </div>
+              )}
+              {highlightPrompt.phase === 'input' && (
+                <div className="highlight-pill expanded">
+                  <span className="hl-star">&#9733;</span>
+                  <input
+                    className="hl-input"
+                    type="text"
+                    maxLength={30}
+                    placeholder="ace, block, rally..."
+                    autoFocus
+                    onKeyDown={function(e) {
+                      if (e.key === 'Enter') {
+                        var note = e.target.value.trim() || null;
+                        markHighlightWithNote(highlightPrompt.index, note);
+                        setHighlightPrompt(function(hp) { return { ...hp, phase: 'confirmed', timer: null }; });
+                        setTimeout(function() { setHighlightPrompt(null); }, 1000);
+                      }
+                    }}
+                    onChange={function(e) {
+                      var note = e.target.value;
+                      setHighlightPrompt(function(hp) { return { ...hp, noteInput: note }; });
+                    }}
+                  />
+                  <button className="hl-done" onClick={function() {
+                    var note = (highlightPrompt.noteInput || "").trim() || null;
+                    markHighlightWithNote(highlightPrompt.index, note);
+                    setHighlightPrompt(function(hp) { return { ...hp, phase: 'confirmed', timer: null }; });
+                    setTimeout(function() { setHighlightPrompt(null); }, 1000);
+                  }}>Done</button>
+                </div>
+              )}
+              {highlightPrompt.phase === 'confirmed' && (
+                <div className="highlight-pill confirmed">
+                  <span className="hl-star">&#9733;</span>
+                  <span className="hl-text marked">Marked!</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="controls">
             <button className="btn btn-secondary" onClick={undoLastPoint} disabled={state.pointLog.length === 0}>Undo</button>
@@ -1640,13 +1883,19 @@ function VolleyballTracker() {
               {state.pointLog.slice().reverse().map(function(p, i) {
                 var key = state.pointLog.length - 1 - i;
                 return (
-                  <div className="log-entry" key={key}>
+                  <div className={"log-entry" + (p.highlight ? " is-highlight" : "")} key={key}>
                     <span className="log-time">{formatClockTime(p.wallClock)}</span>
                     <span className="log-set">S{p.setNum}</span>
+                    <span className="log-highlight" onClick={function(e) { e.stopPropagation(); toggleHighlight(key); }}>
+                      {p.highlight ? "\u2605" : "\u2606"}
+                    </span>
                     <span className={"log-score " + (p.team === "A" ? "log-team-a" : "log-team-b")}>{p.pointsA} - {p.pointsB}</span>
                     <span className="log-arrow" style={{ color: p.team === "A" ? "var(--team-a)" : "var(--team-b)" }}>
                       {p.correction ? "\u2193" : "\u25CF"} {p.team === "A" ? state.teamA : state.teamB}{p.correction ? " (adj)" : ""}
                     </span>
+                    {p.highlight && p.highlightNote && (
+                      <span className="log-hl-note">({p.highlightNote})</span>
+                    )}
                   </div>
                 );
               })}
@@ -1669,6 +1918,12 @@ function VolleyballTracker() {
             {state.setHistory.map(function(sh, i) { return <div key={i}>Set {i + 1}: {sh.scoreA}&#8211;{sh.scoreB}</div>; })}
           </div>
 
+          {highlightCount > 0 && (
+            <div style={{ color: 'var(--warning)', fontSize: 14, fontWeight: 600, letterSpacing: 1, marginTop: 8 }}>
+              {"\u2605"} {highlightCount} highlight{highlightCount !== 1 ? 's' : ''} marked
+            </div>
+          )}
+
           {!state.syncTimestamp && (
             <div className="format-info" style={{ maxWidth: 300, textAlign: "center" }}>
               No sync point was set. SRT/FCPXML/MP4 exports require sync. CSV with wall-clock timestamps is still available.
@@ -1680,6 +1935,16 @@ function VolleyballTracker() {
             <button className="btn btn-primary" onClick={function() { openExport("csv"); }}>Export CSV (Raw Data)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("srt"); }} disabled={!state.syncTimestamp}>Export SRT (Subtitles)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("fcpxml"); }} disabled={!state.syncTimestamp}>Export FCPXML (Final Cut)</button>
+
+            {highlightCount > 0 && (
+              <React.Fragment>
+                <div style={{ width: "100%", borderTop: "1px solid var(--surface2)", margin: "6px 0", paddingTop: 10 }}>
+                  <div className="highlight-section-label">{"\u2605"} Highlights ({highlightCount})</div>
+                </div>
+                <button className="btn btn-secondary" onClick={function() { openExport("hlsrt"); }} disabled={!state.syncTimestamp}>Export Highlights SRT</button>
+                <button className="btn btn-secondary" onClick={function() { openExport("chapters"); }} disabled={!state.syncTimestamp}>Export YouTube Chapters</button>
+              </React.Fragment>
+            )}
 
             <div style={{ width: "100%", borderTop: "1px solid var(--surface2)", margin: "6px 0", paddingTop: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", color: "var(--accent)", textAlign: "center", marginBottom: 8 }}>Chroma Key Video</div>
