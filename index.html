@@ -1577,13 +1577,8 @@ function VolleyballTracker() {
     shareOrDownload(blob, fname, "text/csv");
   }
 
-  // --- MP4 generation with pre-flight safety ---
   async function handleGenerateMP4() {
     if (isEncoding) return;
-
-    // Pre-flight: auto-download CSV as safety backup
-    try { downloadCSV(); } catch (e) { /* non-blocking */ }
-    await new Promise(function(r) { setTimeout(r, 500); });
 
     var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     if (entries.length === 0) {
