@@ -40,3 +40,25 @@ The entire application is a **single `index.html` file** with no build toolchain
 - `POINTS_TO_WIN_SET = 25`, `POINTS_TO_WIN_TIEBREAK = 15`, `SETS_TO_WIN_MATCH = 3`, `MIN_LEAD = 2`
 
 **Sync mechanism:** The "Sync" button records `Date.now()` as `syncTimestamp`. All export timestamps are computed as `pointLog[i].timestamp - syncTimestamp`, so exports are relative to whenever the user pressed Sync (typically at video recording start or first serve).
+
+## Analytics (added v2.7 — 2026-03-28)
+
+Two cookieless, GDPR-compliant analytics tiers are active. No consent banner needed.
+
+**Cloudflare Web Analytics**
+- Token: `7b35cfd2c4534994b637cf07d6d48614`
+- Snippet: just before `</body>` with `defer`
+- Tracks: pageviews, referrers, devices
+
+**Matomo (self-hosted)**
+- URL: `https://quandopasso.com/Matomo/`
+- Site ID: `2` (ScoreLayer)
+- Snippet: in `<head>` after Google Fonts, before React scripts
+- `disableCookies()` is called before `trackPageView` — no cookies ever written
+- Archiving cron job should be configured in cPanel for historical reports to work
+
+**Event instrumentation** — `trackEvent(category, action)` helper in the pure JS `<script>` block:
+- `Match.Start`, `Match.Complete`, `Match.EndEarly`
+- `Highlight.Mark`
+- `Export.SRT`, `Export.FCPXML`, `Export.ASS`, `Export.CSV`, `Export.ChromaScript`, `Export.ChromaKit`, `Export.Chapters`, `Export.HlSRT`
+- `Export.MP4Start`, `Export.MP4Success`
