@@ -28,6 +28,17 @@ To deploy your own:
 2. Go to **Settings → Pages → Source**: select "GitHub Actions"
 3. Push to `main` — the site deploys automatically
 
+## Analytics
+
+ScoreLayer Volley uses two privacy-first, cookieless analytics tiers. No consent banner is required — no cookies, no fingerprinting, no personal data collected.
+
+| Tier | Tool | Purpose |
+|---|---|---|
+| Pageviews & traffic | Cloudflare Web Analytics | Visits, referrers (Instagram), devices |
+| In-app events | Matomo (self-hosted, cookieless) | Feature adoption, export usage, match completion |
+
+**Tracked events:** `Match.Start`, `Match.Complete`, `Match.EndEarly`, `Highlight.Mark`, `Export.SRT/FCPXML/ASS/CSV/ChromaKit/Chapters/HlSRT`, `Export.MP4Start`, `Export.MP4Success`
+
 ## Tech Stack
 
 Single `index.html` file — React 18 (CDN), no build step, no backend.
