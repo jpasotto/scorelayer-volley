@@ -10,6 +10,21 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+<!-- Matomo -->
+<script>
+  var _paq = window._paq = window._paq || [];
+  _paq.push(['disableCookies']);
+  _paq.push(['trackPageView']);
+  _paq.push(['enableLinkTracking']);
+  (function() {
+    var u="https://quandopasso.com/Matomo/";
+    _paq.push(['setTrackerUrl', u+'matomo.php']);
+    _paq.push(['setSiteId', '2']);
+    var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+    g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+  })();
+</script>
+<!-- End Matomo -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -165,6 +180,16 @@ var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
+
+// --- Analytics ---
+function trackEvent(category, action, name, value) {
+  if (window._paq) {
+    var args = ['trackEvent', category, action];
+    if (name !== undefined) args.push(name);
+    if (value !== undefined) args.push(value);
+    window._paq.push(args);
+  }
+}
 
 // --- Helpers ---
 function formatSRTTime(ms) {
@@ -1343,6 +1368,8 @@ function VolleyballTracker() {
   const [highlightPrompt, setHighlightPrompt] = useState(null);
   // Shape: { index: number, timer: timeoutId, phase: 'prompt' | 'input' | 'confirmed' } | null
 
+  const prevMatchOver = useRef(false);
+
   // Check for autosave on mount
   useEffect(function() {
     var saved = loadAutosave();
@@ -1351,6 +1378,16 @@ function VolleyballTracker() {
       window.__scorelayer_autosave = saved;
     }
   }, []);
+
+  // Track Match.Complete when match ends naturally
+  useEffect(function() {
+    if (state.matchOver && !prevMatchOver.current) {
+      if (state.setsA >= SETS_TO_WIN_MATCH || state.setsB >= SETS_TO_WIN_MATCH) {
+        trackEvent('Match', 'Complete');
+      }
+    }
+    prevMatchOver.current = state.matchOver;
+  });
 
   // Autosave on every state change during match
   useEffect(function() {
@@ -1362,6 +1399,7 @@ function VolleyballTracker() {
   const startMatch = useCallback(function() {
     setState(function(s) { return { ...s, matchStarted: true, teamA: s.teamA.trim() || "Home", teamB: s.teamB.trim() || "Away" }; });
     setScreen(SCREEN.MATCH);
+    trackEvent('Match', 'Start');
   }, []);
 
   const handleSync = useCallback(function() {
@@ -1443,6 +1481,7 @@ function VolleyballTracker() {
   }, []);
 
   const markHighlightWithNote = useCallback(function(logIndex, note) {
+    trackEvent('Highlight', 'Mark');
     setState(function(s) {
       var entry = s.pointLog[logIndex];
       if (!entry) return s;
@@ -1550,11 +1589,14 @@ function VolleyballTracker() {
       content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
       fname += ".csv";
     }
+    var exportEventMap = { srt: 'SRT', fcpxml: 'FCPXML', ass: 'ASS', chroma: 'ChromaScript', chapters: 'Chapters', hlsrt: 'HlSRT', csv: 'CSV' };
+    if (exportEventMap[type]) trackEvent('Export', exportEventMap[type]);
     setCopyFeedback("");
     setExportModal({ type: type, content: content, filename: fname });
   }
 
   function downloadChromaKit() {
+    trackEvent('Export', 'ChromaKit');
     var ass = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     var sh = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     var readme = generateReadme(state.teamA, state.teamB);
@@ -1571,6 +1613,7 @@ function VolleyballTracker() {
   }
 
   function downloadCSV() {
+    trackEvent('Export', 'CSV');
     var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB + ".csv";
     var blob = new Blob([content], { type: "text/csv" });
@@ -1589,6 +1632,7 @@ function VolleyballTracker() {
     setIsEncoding(true);
     setEncodeProgress(0);
     setMp4Error(null);
+    trackEvent('Export', 'MP4Start');
 
     var result = await generateOverlayMP4(entries, state.teamA, state.teamB, overlayPositionTop, function(pct) {
       setEncodeProgress(pct);
@@ -1598,6 +1642,7 @@ function VolleyballTracker() {
 
     if (result.success) {
       setEncodeProgress(100);
+      trackEvent('Export', 'MP4Success');
       shareOrDownload(result.blob, result.filename, "video/mp4");
     } else {
       setMp4Error(result);
@@ -1640,6 +1685,7 @@ function VolleyballTracker() {
 
     setCsvIsEncoding(true);
     setCsvEncodeProgress(0);
+    trackEvent('Export', 'MP4Start');
 
     var result = await generateOverlayMP4(
       finalResult.entries, finalResult.teamA, finalResult.teamB,
@@ -1650,6 +1696,7 @@ function VolleyballTracker() {
 
     if (result.success) {
       setCsvEncodeProgress(100);
+      trackEvent('Export', 'MP4Success');
       shareOrDownload(result.blob, result.filename, "video/mp4");
     } else {
       setMp4Error(result);
@@ -2073,6 +2120,7 @@ function VolleyballTracker() {
               <button className="btn btn-secondary" onClick={function() { setConfirmAction(null); }}>Cancel</button>
               <button className="btn btn-danger" onClick={function() {
                 if (confirmAction === "end") {
+                  trackEvent('Match', 'EndEarly');
                   setState(function(s) { return { ...s, matchOver: true, setHistory: s.setHistory.concat([{ winnerA: s.pointsA > s.pointsB, scoreA: s.pointsA, scoreB: s.pointsB }]) }; });
                 } else { resetMatch(); }
                 setConfirmAction(null);
@@ -2102,5 +2150,7 @@ function VolleyballTracker() {
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(VolleyballTracker));
 </script>
+<!-- Cloudflare Web Analytics -->
+<script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "7b35cfd2c4534994b637cf07d6d48614"}'></script>
 </body>
 </html>
