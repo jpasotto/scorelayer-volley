@@ -46,12 +46,10 @@ The entire application is a **single `index.html` file** with no build toolchain
 Two cookieless, GDPR-compliant analytics tiers are active. No consent banner needed.
 
 **Cloudflare Web Analytics**
-- Token: `7b35cfd2c4534994b637cf07d6d48614`
 - Snippet: just before `</body>` with `defer`
 - Tracks: pageviews, referrers, devices
 
 **Matomo (self-hosted)**
-- URL: `https://quandopasso.com/Matomo/`
 - Site ID: `2` (ScoreLayer)
 - Snippet: in `<head>` after Google Fonts, before React scripts
 - `disableCookies()` is called before `trackPageView` — no cookies ever written
