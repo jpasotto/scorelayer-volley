@@ -180,6 +180,20 @@ var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
+var APP_VERSION = "2.8";
+
+var HIGHLIGHT_PILL_MS = 8000;
+var HIGHLIGHT_PILL_EXTEND_MS = 8000;
+
+// YouTube chapter validation rules
+// Verified 2026-04-13 against https://support.google.com/youtube/answer/9884579
+var YOUTUBE_CHAPTER_RULES = {
+  FIRST_AT_ZERO: true,      // First chapter must be at 00:00
+  MIN_CHAPTERS: 3,           // Minimum 3 chapters total
+  MIN_DURATION_SEC: 10,      // Each chapter must be >=10s long
+  ASCENDING_ORDER: true,     // Strictly ascending timestamps
+  SECOND_WITHIN_SEC: 600,    // Second chapter must start within first 10 min
+};
 
 // --- Analytics ---
 function trackEvent(category, action, name, value) {
@@ -204,6 +218,12 @@ function formatSRTTime(ms) {
 function formatClockTime(ts) {
   var d = new Date(ts);
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatSetLabel(setNum, offset) {
+  var n = setNum + (offset || 0);
+  if (n === 0) return "Warm-up";
+  return "Set " + n;
 }
 
 function isTiebreakSet(setsA, setsB) {
@@ -233,6 +253,8 @@ function createInitialState() {
     matchOver: false,
     syncTimestamp: null,
     currentSet: 1,
+    extraSetMode: false,
+    setNumberOffset: 0,
   };
 }
 
@@ -248,6 +270,8 @@ function autosaveState(state) {
       setHistory: state.setHistory, pointLog: state.pointLog,
       matchStarted: state.matchStarted, matchOver: state.matchOver,
       syncTimestamp: state.syncTimestamp, currentSet: state.currentSet,
+      extraSetMode: state.extraSetMode || false,
+      setNumberOffset: state.setNumberOffset || 0,
       savedAt: Date.now()
     }));
   } catch (e) { /* localStorage full or unavailable */ }
@@ -269,7 +293,7 @@ function clearAutosave() {
 
 
 // --- Generators ---
-function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
+function generateSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return "";
   var lines = [];
   var idx = 1;
@@ -282,7 +306,7 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB) {
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
     var hlPrefix = p.highlight ? "\u2605 " : "";
     var hlSuffix = (p.highlight && p.highlightNote) ? " [" + p.highlightNote + "]" : "";
-    lines.push(hlPrefix + "Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB + hlSuffix);
+    lines.push(hlPrefix + formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB + hlSuffix);
     lines.push("");
     idx++;
   }
@@ -300,7 +324,7 @@ function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
   return [header].concat(rows).join("\n");
 }
 
-function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
+function generateFCPXML(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return "";
   var fps = 25;
   function toFrac(ms) { var frames = Math.round((ms / 1000) * fps); return frames * 100 + "/" + (fps * 100) + "s"; }
@@ -311,7 +335,7 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
     var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
     var dur = endMs - startMs;
-    var text = "Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
+    var text = formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     titles += '            <title name="' + text + '" offset="' + toFrac(startMs) + '" duration="' + toFrac(dur) + '">\n';
     titles += '              <text><text-style ref="ts1">' + text + '</text-style></text>\n';
     titles += '            </title>\n';
@@ -322,7 +346,7 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB) {
     if (!pm.highlight) continue;
     var markerMs = pm.timestamp - syncTimestamp;
     if (markerMs < 0) continue;
-    var markerText = "\u2605 Set " + pm.setNum + " | " + teamA + " " + pm.pointsA + " - " + pm.pointsB + " " + teamB;
+    var markerText = "\u2605 " + formatSetLabel(pm.setNum, setNumberOffset) + " | " + teamA + " " + pm.pointsA + " - " + pm.pointsB + " " + teamB;
     if (pm.highlightNote) markerText += " [" + pm.highlightNote + "]";
     markers += '            <marker start="' + toFrac(markerMs) + '" duration="100/' + (fps * 100) + 's" value="' + markerText.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;") + '" />\n';
   }
@@ -363,7 +387,7 @@ function formatASSTime(ms) {
   return String(h) + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "." + String(cs).padStart(2, "0");
 }
 
-function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return "";
   var title = (matchTitle || "").trim();
   var header = [
@@ -403,7 +427,7 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
 
     // Info row - three positioned elements on same Y level (y=900, i.e. 130px above score baseline)
     // \an1 = bottom-left anchor, \an2 = bottom-center, \an3 = bottom-right
-    var centerText = "Set " + p.setNum;
+    var centerText = formatSetLabel(p.setNum, setNumberOffset);
     var rightText = "Sets " + p.setsA + ":" + p.setsB;
 
     if (title) {
@@ -416,27 +440,109 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
 }
 
 // --- YouTube Chapters export ---
-function generateYouTubeChapters(pointLog, syncTimestamp, teamA, teamB) {
-  if (!syncTimestamp) return "";
-  var lines = ["00:00 Match Start"];
+function msToChapterTime(ms) {
+  var totalSec = Math.floor(ms / 1000);
+  var h = Math.floor(totalSec / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  var s = totalSec % 60;
+  return h > 0
+    ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
+    : m + ":" + String(s).padStart(2, "0");
+}
+
+function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
+  if (!syncTimestamp) return [];
+  var chapters = [];
+
+  // Collect set-boundary chapters: first point of each set
+  var setFirstMs = {};
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
-    if (!p.highlight) continue;
-    var offsetMs = p.timestamp - syncTimestamp;
-    if (offsetMs < 0) continue;
-    var totalSec = Math.floor(offsetMs / 1000);
-    var h = Math.floor(totalSec / 3600);
-    var m = Math.floor((totalSec % 3600) / 60);
-    var s = totalSec % 60;
-    var timeStr = h > 0
-      ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0")
-      : m + ":" + String(s).padStart(2, "0");
-    var text = "\u2605 " + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + " (Set " + p.setNum + ")";
-    if (p.highlightNote) text += " [" + p.highlightNote + "]";
-    lines.push(timeStr + " " + text);
+    var ms = p.timestamp - syncTimestamp;
+    if (ms < 0) continue;
+    if (setFirstMs[p.setNum] === undefined) setFirstMs[p.setNum] = ms;
   }
-  if (lines.length <= 1) return "";
-  return lines.join("\n");
+
+  // Determine if Set 1 starts at (or within 1s of) 00:00
+  var set1StartMs = setFirstMs[1] !== undefined ? setFirstMs[1] : null;
+  var set1AtZero = set1StartMs !== null && set1StartMs <= 1000;
+
+  // Add Match Start at 00:00 (or skip if Set 1 starts at 00:00)
+  if (!set1AtZero) {
+    chapters.push({ timeMs: 0, text: "Match Start" });
+  }
+
+  // Add one chapter per set boundary
+  var setNums = Object.keys(setFirstMs).map(Number).sort(function(a, b) { return a - b; });
+  for (var j = 0; j < setNums.length; j++) {
+    var setNum = setNums[j];
+    var setMs = setFirstMs[setNum];
+    var label = formatSetLabel(setNum, setNumberOffset) + " Start";
+    if (set1AtZero && setNum === 1) {
+      chapters.push({ timeMs: 0, text: label });
+    } else {
+      chapters.push({ timeMs: setMs, text: label });
+    }
+  }
+
+  // Add highlight chapters
+  for (var k = 0; k < pointLog.length; k++) {
+    var ph = pointLog[k];
+    if (!ph.highlight) continue;
+    var offsetMs = ph.timestamp - syncTimestamp;
+    if (offsetMs < 0) continue;
+    var hlText = "\u2605 " + teamA + " " + ph.pointsA + "-" + ph.pointsB + " " + teamB + " (" + formatSetLabel(ph.setNum, setNumberOffset) + ")";
+    if (ph.highlightNote) hlText += " [" + ph.highlightNote + "]";
+    chapters.push({ timeMs: offsetMs, text: hlText });
+  }
+
+  // Sort chronologically, stable: boundaries before highlights at same time
+  chapters.sort(function(a, b) { return a.timeMs - b.timeMs; });
+
+  return chapters;
+}
+
+function generateYouTubeChapters(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
+  var chapters = buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset);
+  if (chapters.length === 0) return "";
+  return chapters.map(function(c) {
+    return msToChapterTime(c.timeMs) + " " + c.text;
+  }).join("\n");
+}
+
+function validateYouTubeChapters(chapters) {
+  var errors = [];
+  if (chapters.length === 0) { return { valid: false, errors: ["No chapters generated."] }; }
+
+  if (YOUTUBE_CHAPTER_RULES.FIRST_AT_ZERO && chapters[0].timeMs !== 0) {
+    errors.push("First chapter must be at 00:00 (currently at " + msToChapterTime(chapters[0].timeMs) + ").");
+  }
+  if (YOUTUBE_CHAPTER_RULES.MIN_CHAPTERS && chapters.length < YOUTUBE_CHAPTER_RULES.MIN_CHAPTERS) {
+    errors.push("YouTube requires at least " + YOUTUBE_CHAPTER_RULES.MIN_CHAPTERS + " chapters (only " + chapters.length + " generated).");
+  }
+  if (YOUTUBE_CHAPTER_RULES.ASCENDING_ORDER) {
+    for (var i = 1; i < chapters.length; i++) {
+      if (chapters[i].timeMs <= chapters[i - 1].timeMs) {
+        errors.push("Chapter timestamps must be strictly ascending (duplicate or out-of-order at " + msToChapterTime(chapters[i].timeMs) + ").");
+        break;
+      }
+    }
+  }
+  if (YOUTUBE_CHAPTER_RULES.MIN_DURATION_SEC) {
+    for (var j = 0; j < chapters.length - 1; j++) {
+      var durSec = (chapters[j + 1].timeMs - chapters[j].timeMs) / 1000;
+      if (durSec < YOUTUBE_CHAPTER_RULES.MIN_DURATION_SEC) {
+        errors.push("Chapter \"" + chapters[j].text + "\" is only " + durSec.toFixed(1) + "s long (minimum " + YOUTUBE_CHAPTER_RULES.MIN_DURATION_SEC + "s required).");
+      }
+    }
+  }
+  if (YOUTUBE_CHAPTER_RULES.SECOND_WITHIN_SEC && chapters.length >= 2) {
+    var secondSec = chapters[1].timeMs / 1000;
+    if (secondSec > YOUTUBE_CHAPTER_RULES.SECOND_WITHIN_SEC) {
+      errors.push("Second chapter must start within the first 10 minutes (currently at " + msToChapterTime(chapters[1].timeMs) + ").");
+    }
+  }
+  return { valid: errors.length === 0, errors: errors };
 }
 
 // --- Highlights-only SRT export ---
@@ -463,7 +569,7 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB) {
 
 // --- Chroma Key shell script + Python frame renderer ---
 // Info row rendered in Python: title at x=80 (left), Set N centered, Sets A:B at x=WIDTH-80 (right)
-function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return "";
   var title = (matchTitle || "").trim();
   var lastEntry = pointLog[pointLog.length - 1];
@@ -483,7 +589,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle)
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
       score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: "Set " + p.setNum,
+      set_info: formatSetLabel(p.setNum, setNumberOffset),
       title: title,
       sets_score: "Sets " + p.setsA + ":" + p.setsB,
       highlight: p.highlight || false,
@@ -830,7 +936,7 @@ function generateReadme(teamA, teamB) {
 
 
 // --- Build entries array from pointLog (shared by MP4 generator and chroma script) ---
-function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return [];
   var title = (matchTitle || "").trim();
   var entries = [];
@@ -843,7 +949,7 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle) 
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
       score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: "Set " + p.setNum,
+      set_info: formatSetLabel(p.setNum, setNumberOffset),
       title: title,
       sets_score: "Sets " + p.setsA + ":" + p.setsB,
       highlight: p.highlight || false,
@@ -1364,6 +1470,10 @@ function VolleyballTracker() {
   // Autosave indicator
   const [showAutosaved, setShowAutosaved] = useState(false);
 
+  // YouTube chapter validation errors modal
+  const [ytChapterErrors, setYtChapterErrors] = useState(null);
+  // Shape: { errors: string[], content: string, filename: string } | null
+
   // Highlight pill state
   const [highlightPrompt, setHighlightPrompt] = useState(null);
   // Shape: { index: number, timer: timeoutId, phase: 'prompt' | 'input' | 'confirmed' } | null
@@ -1403,7 +1513,14 @@ function VolleyballTracker() {
   }, []);
 
   const handleSync = useCallback(function() {
-    setState(function(s) { return { ...s, syncTimestamp: Date.now() }; });
+    setState(function(s) {
+      if (s.syncTimestamp) {
+        // Already synced — show confirmation before overwriting
+        setTimeout(function() { setConfirmAction("resync"); }, 0);
+        return s;
+      }
+      return { ...s, syncTimestamp: Date.now() };
+    });
   }, []);
 
   const scorePoint = useCallback(function(team) {
@@ -1416,7 +1533,7 @@ function VolleyballTracker() {
       var target = getTargetPoints(setsA, setsB);
       var matchOver = false;
       var newSetHistory = s.setHistory.slice();
-      if (isSetWon(pointsA, pointsB, target)) {
+      if (isSetWon(pointsA, pointsB, target) && !s.extraSetMode) {
         var winnerA = pointsA > pointsB;
         newSetHistory.push({ winnerA: winnerA, scoreA: pointsA, scoreB: pointsB });
         if (winnerA) setsA++; else setsB++;
@@ -1497,7 +1614,7 @@ function VolleyballTracker() {
     }
     var timerId = setTimeout(function() {
       setHighlightPrompt(null);
-    }, 4000);
+    }, HIGHLIGHT_PILL_MS);
     setHighlightPrompt({ index: logIndex, timer: timerId, phase: 'prompt' });
   }
 
@@ -1514,7 +1631,7 @@ function VolleyballTracker() {
   const restoreAutosave = useCallback(function() {
     var saved = window.__scorelayer_autosave;
     if (saved) {
-      setState(saved);
+      setState({ extraSetMode: false, setNumberOffset: 0, ...saved });
       setScreen(SCREEN.MATCH);
       delete window.__scorelayer_autosave;
     }
@@ -1561,26 +1678,34 @@ function VolleyballTracker() {
   function openExport(type) {
     var content = "";
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB;
+    var offset = state.setNumberOffset || 0;
     if (type === "srt") {
-      content = generateSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, offset);
       fname += ".srt";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "fcpxml") {
-      content = generateFCPXML(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateFCPXML(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, offset);
       fname += ".fcpxml";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "ass") {
-      content = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+      content = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, offset);
       fname += ".ass";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "chroma") {
-      content = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+      content = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, offset);
       fname = "generate_overlay.sh";
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "chapters") {
-      content = generateYouTubeChapters(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
       fname += "_chapters.txt";
-      if (!content) { window.alert("No highlights marked or no sync point set."); return; }
+      var chapters = buildYouTubeChapterList(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, offset);
+      if (chapters.length === 0) { window.alert("No sync point set or no points recorded."); return; }
+      content = chapters.map(function(c) { return msToChapterTime(c.timeMs) + " " + c.text; }).join("\n");
+      var validation = validateYouTubeChapters(chapters);
+      if (!validation.valid) {
+        trackEvent('Export', 'Chapters');
+        setYtChapterErrors({ errors: validation.errors, content: content, filename: fname });
+        return;
+      }
     } else if (type === "hlsrt") {
       content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
       fname += "_highlights.srt";
@@ -1597,8 +1722,9 @@ function VolleyballTracker() {
 
   function downloadChromaKit() {
     trackEvent('Export', 'ChromaKit');
-    var ass = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
-    var sh = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+    var offset = state.setNumberOffset || 0;
+    var ass = generateASS(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, offset);
+    var sh = generateChromaScript(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, offset);
     var readme = generateReadme(state.teamA, state.teamB);
     if (!ass || !sh) { window.alert("No sync point set or no points recorded."); return; }
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB;
@@ -1623,7 +1749,7 @@ function VolleyballTracker() {
   async function handleGenerateMP4() {
     if (isEncoding) return;
 
-    var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+    var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, state.setNumberOffset || 0);
     if (entries.length === 0) {
       window.alert("No sync point set or no points recorded.");
       return;
@@ -1815,23 +1941,26 @@ function VolleyballTracker() {
                   <div className="progress-bar-fill" style={{ width: csvEncodeProgress + "%" }} />
                 </div>
               )}
-              {csvParseResult.highlightCount > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                  <div className="highlight-section-label">{"\u2605"} {csvParseResult.highlightCount} highlight{csvParseResult.highlightCount !== 1 ? "s" : ""} in CSV</div>
-                  <button className="btn btn-secondary" onClick={function() {
-                    var content = generateHighlightsSRT(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
-                    if (!content) { window.alert("No highlights found."); return; }
-                    var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_highlights.srt";
-                    setExportModal({ type: "hlsrt", content: content, filename: fname });
-                  }}>Export Highlights SRT</button>
-                  <button className="btn btn-secondary" onClick={function() {
-                    var content = generateYouTubeChapters(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
-                    if (!content) { window.alert("No highlights found."); return; }
-                    var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_chapters.txt";
-                    setExportModal({ type: "chapters", content: content, filename: fname });
-                  }}>Export YouTube Chapters</button>
-                </div>
-              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                <button className="btn btn-secondary" onClick={function() {
+                  var chapters = buildYouTubeChapterList(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB, 0);
+                  if (!chapters.length) { window.alert("No points recorded."); return; }
+                  var content = chapters.map(function(c) { return msToChapterTime(c.timeMs) + " " + c.text; }).join("\n");
+                  var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_chapters.txt";
+                  setExportModal({ type: "chapters", content: content, filename: fname });
+                }}>Export YouTube Chapters</button>
+                {csvParseResult.highlightCount > 0 && (
+                  <>
+                    <div className="highlight-section-label">{"\u2605"} {csvParseResult.highlightCount} highlight{csvParseResult.highlightCount !== 1 ? "s" : ""} in CSV</div>
+                    <button className="btn btn-secondary" onClick={function() {
+                      var content = generateHighlightsSRT(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
+                      if (!content) { window.alert("No highlights found."); return; }
+                      var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_highlights.srt";
+                      setExportModal({ type: "hlsrt", content: content, filename: fname });
+                    }}>Export Highlights SRT</button>
+                  </>
+                )}
+              </div>
             </>
           )}
           <button className="btn btn-small" onClick={function() { setScreen(SCREEN.SETUP); setCsvText(""); setCsvParseResult(null); }} style={{ marginTop: 8 }}>&#8592; Back to Setup</button>
@@ -1870,8 +1999,17 @@ function VolleyballTracker() {
               <div className="set-score" style={{ color: "var(--team-b)" }}>{state.setsB}</div>
             </div>
             <div style={{ marginLeft: 16, textAlign: "center" }}>
-              <div className="set-label">Set</div>
-              <div className="set-score" style={{ color: "var(--text-dim)" }}>{state.currentSet}</div>
+              {state.extraSetMode && <div style={{ background: "var(--warning)", color: "#000", fontSize: 9, fontWeight: 700, letterSpacing: 1, padding: "2px 6px", borderRadius: 3, marginBottom: 2 }}>EXTRA SET</div>}
+              {(function() {
+                var lbl = formatSetLabel(state.currentSet, state.setNumberOffset || 0);
+                var isWarmup = lbl === "Warm-up";
+                return (
+                  <>
+                    <div className="set-label">{isWarmup ? "Warm-up" : "Set"}</div>
+                    <div className="set-score" style={{ color: "var(--text-dim)", fontSize: isWarmup ? 12 : undefined }}>{isWarmup ? "WU" : state.currentSet + (state.setNumberOffset || 0)}</div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -1897,11 +2035,30 @@ function VolleyballTracker() {
           {highlightPrompt && highlightPrompt.phase !== 'done' && !state.matchOver && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 16px' }}>
               {highlightPrompt.phase === 'prompt' && (
-                <div className="highlight-pill" onClick={function() {
-                  if (highlightPrompt.timer) clearTimeout(highlightPrompt.timer);
-                  markHighlightWithNote(highlightPrompt.index, null);
-                  setHighlightPrompt(function(hp) { return { ...hp, phase: 'input', timer: null }; });
-                }}>
+                <div
+                  className="highlight-pill"
+                  onClick={function() {
+                    if (highlightPrompt.timer) clearTimeout(highlightPrompt.timer);
+                    markHighlightWithNote(highlightPrompt.index, null);
+                    setHighlightPrompt(function(hp) { return { ...hp, phase: 'input', timer: null }; });
+                  }}
+                  onTouchStart={function(e) {
+                    // Pause auto-dismiss while finger is held on pill
+                    setHighlightPrompt(function(hp) {
+                      if (hp && hp.timer) { clearTimeout(hp.timer); }
+                      return hp ? { ...hp, timer: null } : hp;
+                    });
+                  }}
+                  onTouchEnd={function(e) {
+                    // Restart timer with extended duration on release
+                    var t = setTimeout(function() { setHighlightPrompt(null); }, HIGHLIGHT_PILL_EXTEND_MS);
+                    setHighlightPrompt(function(hp) { return hp ? { ...hp, timer: t } : hp; });
+                  }}
+                  onTouchCancel={function(e) {
+                    var t = setTimeout(function() { setHighlightPrompt(null); }, HIGHLIGHT_PILL_EXTEND_MS);
+                    setHighlightPrompt(function(hp) { return hp ? { ...hp, timer: t } : hp; });
+                  }}
+                >
                   <span className="hl-star">&#9734;</span>
                   <span className="hl-text">Highlight</span>
                 </div>
@@ -1951,7 +2108,10 @@ function VolleyballTracker() {
               {showLog ? "Hide Log" : "Show Log"} ({state.pointLog.length})
             </button>
             {state.pointLog.length > 0 && <span className="autosave-badge">auto-saved</span>}
-            <button className="btn btn-danger" onClick={function() { setConfirmAction("end"); }}>End Match</button>
+            {state.extraSetMode
+              ? <button className="btn btn-danger" onClick={function() { setState(function(s) { return { ...s, matchOver: true, extraSetMode: false }; }); }}>End Match</button>
+              : <button className="btn btn-danger" onClick={function() { setConfirmAction("end"); }}>End Match</button>
+            }
           </div>
 
           {showLog && (
@@ -1961,7 +2121,7 @@ function VolleyballTracker() {
                 return (
                   <div className={"log-entry" + (p.highlight ? " is-highlight" : "")} key={key}>
                     <span className="log-time">{formatClockTime(p.wallClock)}</span>
-                    <span className="log-set">S{p.setNum}</span>
+                    <span className="log-set">{(function() { var lbl = formatSetLabel(p.setNum, state.setNumberOffset || 0); return lbl === "Warm-up" ? "WU" : "S" + (p.setNum + (state.setNumberOffset || 0)); })()}</span>
                     <span className="log-highlight" onClick={function(e) { e.stopPropagation(); toggleHighlight(key); }}>
                       {p.highlight ? "\u2605" : "\u2606"}
                     </span>
@@ -1991,8 +2151,40 @@ function VolleyballTracker() {
             <span style={{ color: "var(--team-b)" }}>{state.setsB}</span>
           </div>
           <div className="set-details">
-            {state.setHistory.map(function(sh, i) { return <div key={i}>Set {i + 1}: {sh.scoreA}&#8211;{sh.scoreB}</div>; })}
+            {state.setHistory.map(function(sh, i) { return <div key={i}>{formatSetLabel(i + 1, state.setNumberOffset || 0)}: {sh.scoreA}&#8211;{sh.scoreB}</div>; })}
           </div>
+
+          {/* Editable team names */}
+          <div className="title-input-wrap">
+            <label style={{ color: "var(--team-a)" }}>Team A Name</label>
+            <input type="text" value={state.teamA} placeholder="Home" onChange={function(e) { var v = e.target.value; setState(function(s) { return { ...s, teamA: v }; }); autosaveState({ ...state, teamA: e.target.value }); }} />
+          </div>
+          <div className="title-input-wrap">
+            <label style={{ color: "var(--team-b)" }}>Team B Name</label>
+            <input type="text" value={state.teamB} placeholder="Away" onChange={function(e) { var v = e.target.value; setState(function(s) { return { ...s, teamB: v }; }); autosaveState({ ...state, teamB: e.target.value }); }} />
+          </div>
+
+          {/* Set number offset */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", maxWidth: 300, alignItems: "center" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", color: "var(--text-dim)" }}>Set Numbering</span>
+            <div className="position-toggle" style={{ width: "100%" }}>
+              <button className={(state.setNumberOffset || 0) === -1 ? "active" : ""} onClick={function() { setState(function(s) { return { ...s, setNumberOffset: -1 }; }); }}>&#8722;1</button>
+              <button className={(state.setNumberOffset || 0) === 0 ? "active" : ""} onClick={function() { setState(function(s) { return { ...s, setNumberOffset: 0 }; }); }}>0</button>
+              <button className={(state.setNumberOffset || 0) === 1 ? "active" : ""} onClick={function() { setState(function(s) { return { ...s, setNumberOffset: 1 }; }); }}>+1</button>
+            </div>
+            {(state.setNumberOffset || 0) !== 0 && (
+              <span style={{ fontSize: 11, color: "var(--warning)", fontFamily: "var(--font-mono)" }}>
+                Set 1 → {formatSetLabel(1, state.setNumberOffset || 0)}
+              </span>
+            )}
+          </div>
+
+          {/* Continue match button */}
+          <button className="btn btn-secondary" onClick={function() {
+            setState(function(s) {
+              return { ...s, matchOver: false, currentSet: s.currentSet + 1, pointsA: 0, pointsB: 0, extraSetMode: true };
+            });
+          }}>Continue match (+1 set)</button>
 
           {highlightCount > 0 && (
             <div style={{ color: 'var(--warning)', fontSize: 14, fontWeight: 600, letterSpacing: 1, marginTop: 8 }}>
@@ -2012,13 +2204,14 @@ function VolleyballTracker() {
             <button className="btn btn-secondary" onClick={function() { openExport("srt"); }} disabled={!state.syncTimestamp}>Export SRT (Subtitles)</button>
             <button className="btn btn-secondary" onClick={function() { openExport("fcpxml"); }} disabled={!state.syncTimestamp}>Export FCPXML (Final Cut)</button>
 
+            <button className="btn btn-secondary" onClick={function() { openExport("chapters"); }} disabled={!state.syncTimestamp}>Export YouTube Chapters</button>
+
             {highlightCount > 0 && (
               <React.Fragment>
                 <div style={{ width: "100%", borderTop: "1px solid var(--surface2)", margin: "6px 0", paddingTop: 10 }}>
                   <div className="highlight-section-label">{"\u2605"} Highlights ({highlightCount})</div>
                 </div>
                 <button className="btn btn-secondary" onClick={function() { openExport("hlsrt"); }} disabled={!state.syncTimestamp}>Export Highlights SRT</button>
-                <button className="btn btn-secondary" onClick={function() { openExport("chapters"); }} disabled={!state.syncTimestamp}>Export YouTube Chapters</button>
               </React.Fragment>
             )}
 
@@ -2111,7 +2304,7 @@ function VolleyballTracker() {
       )}
 
       {/* ========== CONFIRM DIALOGS ========== */}
-      {confirmAction && confirmAction !== "restore" && (
+      {confirmAction && confirmAction !== "restore" && confirmAction !== "resync" && (
         <div className="confirm-overlay" onClick={function() { setConfirmAction(null); }}>
           <div className="confirm-dialog" onClick={function(e) { e.stopPropagation(); }}>
             <h3>{confirmAction === "end" ? "End Match Early?" : "Start New Match?"}</h3>
@@ -2125,6 +2318,48 @@ function VolleyballTracker() {
                 } else { resetMatch(); }
                 setConfirmAction(null);
               }}>{confirmAction === "end" ? "End Match" : "Reset"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== RE-SYNC CONFIRM DIALOG ========== */}
+      {confirmAction === "resync" && (
+        <div className="confirm-overlay" onClick={function() { setConfirmAction(null); }}>
+          <div className="confirm-dialog" onClick={function(e) { e.stopPropagation(); }}>
+            <h3>Re-sync video alignment?</h3>
+            <p>This will rebase all logged points to the new sync moment. The original sync point will be lost. Continue?</p>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={function() { setConfirmAction(null); }}>Cancel</button>
+              <button className="btn btn-danger" onClick={function() {
+                var now = Date.now();
+                setState(function(s) { return { ...s, syncTimestamp: now }; });
+                autosaveState({ ...state, syncTimestamp: now });
+                setConfirmAction(null);
+              }}>Re-sync</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== YOUTUBE CHAPTER VALIDATION ERRORS ========== */}
+      {ytChapterErrors && (
+        <div className="error-modal-overlay" onClick={function() { setYtChapterErrors(null); }}>
+          <div className="error-modal" onClick={function(e) { e.stopPropagation(); }}>
+            <h3>YouTube Chapter Warnings</h3>
+            <p>The generated chapter list may not work correctly on YouTube:</p>
+            <div className="error-detail" style={{ maxHeight: 120 }}>
+              {ytChapterErrors.errors.map(function(err, i) { return <div key={i}>• {err}</div>; })}
+            </div>
+            <div className="error-actions">
+              <button className="btn btn-primary" onClick={function() {
+                var info = ytChapterErrors;
+                setYtChapterErrors(null);
+                trackEvent('Export', 'Chapters');
+                setCopyFeedback("");
+                setExportModal({ type: "chapters", content: info.content, filename: info.filename });
+              }}>Download anyway</button>
+              <button className="btn btn-small" onClick={function() { setYtChapterErrors(null); }}>Cancel</button>
             </div>
           </div>
         </div>
