@@ -1575,12 +1575,17 @@ function VolleyballTracker() {
       var target = getTargetPoints(setsA, setsB);
       var matchOver = false;
       var newSetHistory = s.setHistory.slice();
-      if (isSetWon(pointsA, pointsB, target) && !s.extraSetMode) {
+      if (isSetWon(pointsA, pointsB, target)) {
         var winnerA = pointsA > pointsB;
         newSetHistory.push({ winnerA: winnerA, scoreA: pointsA, scoreB: pointsB });
-        if (winnerA) setsA++; else setsB++;
-        if (setsA >= SETS_TO_WIN_MATCH || setsB >= SETS_TO_WIN_MATCH) { matchOver = true; }
-        else { pointsA = 0; pointsB = 0; currentSet++; }
+        if (s.extraSetMode) {
+          // Extra set: record the result and return to match-over without changing setsA/setsB
+          matchOver = true;
+        } else {
+          if (winnerA) setsA++; else setsB++;
+          if (setsA >= SETS_TO_WIN_MATCH || setsB >= SETS_TO_WIN_MATCH) { matchOver = true; }
+          else { pointsA = 0; pointsB = 0; currentSet++; }
+        }
       }
       return { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: newSetHistory, pointLog: newLog, matchOver: matchOver };
     });
