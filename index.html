@@ -46,6 +46,14 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .header h1 { font-size: 14px; font-weight: 500; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); }
   .header .live-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; box-shadow: 0 0 8px var(--accent-glow); }
   @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+  .beta-badge { display: inline-flex; align-items: center; padding: 2px 8px; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; color: #0a0e14; background: linear-gradient(135deg, #f59e0b, #fcd34d); border-radius: 4px; cursor: pointer; position: relative; top: -1px; vertical-align: middle; animation: betaGlow 2s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes betaGlow { 0%, 100% { box-shadow: 0 0 6px rgba(245,158,11,0.6); } 50% { box-shadow: 0 0 18px rgba(245,158,11,1), 0 0 32px rgba(245,158,11,0.45); } }
+  .beta-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .beta-modal { background: var(--surface); border-radius: 16px; padding: 32px 24px 24px; max-width: 320px; width: 100%; border: 1px solid rgba(245,158,11,0.4); box-shadow: 0 0 48px rgba(245,158,11,0.25), 0 8px 32px rgba(0,0,0,0.5); text-align: center; }
+  .beta-modal-icon { font-size: 36px; margin-bottom: 12px; }
+  .beta-modal-title { font-size: 16px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 16px; background: linear-gradient(135deg, #f59e0b, #fcd34d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .beta-modal-msg { font-size: 14px; color: var(--text); line-height: 1.7; margin-bottom: 8px; }
+  .beta-modal-note { font-size: 12px; color: var(--text-dim); line-height: 1.6; margin-bottom: 24px; font-family: var(--font-mono); border-top: 1px solid var(--surface2); padding-top: 12px; margin-top: 12px; }
   .setup { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 32px 24px; gap: 28px; }
   .setup-title { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; text-align: center; background: linear-gradient(135deg, var(--accent), #ff9a5c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   .setup-subtitle { text-align: center; color: var(--text-dim); font-size: 13px; font-weight: 400; letter-spacing: 1px; margin-top: -16px; }
@@ -1596,6 +1604,9 @@ function VolleyballTracker() {
   // Autosave indicator
   const [showAutosaved, setShowAutosaved] = useState(false);
 
+  // Beta info modal
+  const [showBetaModal, setShowBetaModal] = useState(false);
+
   // YouTube chapter validation errors modal
   const [ytChapterErrors, setYtChapterErrors] = useState(null);
   // Shape: { errors: string[], content: string, filename: string } | null
@@ -1994,7 +2005,10 @@ function VolleyballTracker() {
   return (
     <div className="app">
       <div className="header">
-        <h1>ScoreLayer Volley</h1>
+        <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          ScoreLayer Volley
+          <span className="beta-badge" onClick={function() { setShowBetaModal(true); }}>BETA</span>
+        </h1>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {screen === SCREEN.MATCH && !state.matchOver && <div className="live-dot" />}
           {screen === SCREEN.SETUP && (
@@ -2469,6 +2483,19 @@ function VolleyballTracker() {
                 setConfirmAction(null);
               }}>Re-sync</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== BETA INFO MODAL ========== */}
+      {showBetaModal && (
+        <div className="beta-modal-overlay" onClick={function() { setShowBetaModal(false); }}>
+          <div className="beta-modal" onClick={function(e) { e.stopPropagation(); }}>
+            <div className="beta-modal-icon">⚡</div>
+            <div className="beta-modal-title">ScoreLayer Volley Beta</div>
+            <div className="beta-modal-msg">All features are <strong>free to use</strong> during the beta phase.</div>
+            <div className="beta-modal-note">Export tools — MP4, SRT, FCPXML, YouTube Chapters and more — may require a plan after the official launch.</div>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={function() { setShowBetaModal(false); }}>Got it</button>
           </div>
         </div>
       )}
