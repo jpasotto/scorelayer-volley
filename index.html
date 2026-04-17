@@ -591,7 +591,7 @@ function validateYouTubeChapters(chapters) {
 }
 
 // --- Highlights-only SRT export ---
-function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB) {
+function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return "";
   var lines = [];
   var idx = 1;
@@ -605,8 +605,14 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB) {
       var rallyStartMs = pointLog[i - 1].timestamp - syncTimestamp;
       if (rallyStartMs >= 0) startMs = rallyStartMs;
     }
-    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
-    var text = "\u2605 Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
+    // If the next point is also a highlight in the same set, cap our end to avoid overlap
+    var nextP = i < pointLog.length - 1 ? pointLog[i + 1] : null;
+    var nextHighlightSameSet = nextP && nextP.highlight && nextP.setNum === p.setNum;
+    var endMs = nextHighlightSameSet
+      ? (p.timestamp - syncTimestamp)
+      : (nextP ? nextP.timestamp - syncTimestamp : startMs + 10000);
+    if (endMs <= startMs) continue;
+    var text = "\u2605 " + formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     if (p.highlightNote) text += " [" + p.highlightNote + "]";
     lines.push(String(idx));
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
@@ -1143,9 +1149,25 @@ function parseCSVToEntries(csvText, matchTitle) {
     prevPointsB = d.pointsB;
     var startSec = d.offset_ms / 1000;
     if (startSec < 0) continue;
-    var rawEndSec = j < dataRows.length - 1 ? dataRows[j + 1].offset_ms / 1000 : startSec + 10;
-    var csvIsSetBreak = j < dataRows.length - 1 && dataRows[j + 1].setNum !== d.setNum;
+    // For highlights, extend start back to rally beginning (prev row's timestamp), same set only
+    if (d.highlight && j > 0 && dataRows[j - 1].setNum === d.setNum) {
+      var rallyStartSec = dataRows[j - 1].offset_ms / 1000;
+      if (rallyStartSec >= 0) {
+        startSec = rallyStartSec;
+        // Truncate previous entry's end to avoid overlap
+        if (entries.length > 0 && !entries[entries.length - 1].blank) {
+          entries[entries.length - 1].end = Math.round(startSec * 1000) / 1000;
+        }
+      }
+    }
+    var csvNextP = j < dataRows.length - 1 ? dataRows[j + 1] : null;
+    var csvNextHighlightSameSet = csvNextP && csvNextP.highlight && csvNextP.setNum === d.setNum;
+    var rawEndSec = csvNextHighlightSameSet
+      ? (d.offset_ms / 1000)
+      : (csvNextP ? csvNextP.offset_ms / 1000 : startSec + 10);
+    var csvIsSetBreak = csvNextP && csvNextP.setNum !== d.setNum;
     var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
+    if (endSec <= startSec) continue;
     entries.push({
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
@@ -1174,6 +1196,7 @@ function parseCSVToEntries(csvText, matchTitle) {
     });
   }
 
+  entries = entries.filter(function(e) { return e.end > e.start; });
   var highlightCount = pointLog.filter(function(p) { return p.highlight; }).length;
   return { entries: entries, pointLog: pointLog, highlightCount: highlightCount, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
 }
@@ -1815,7 +1838,7 @@ function VolleyballTracker() {
         return;
       }
     } else if (type === "hlsrt") {
-      content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB);
+      content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.setNumberOffset || 0);
       fname += "_highlights.srt";
       if (!content) { window.alert("No highlights marked or no sync point set."); return; }
     } else {
@@ -2061,7 +2084,7 @@ function VolleyballTracker() {
                   <>
                     <div className="highlight-section-label">{"\u2605"} {csvParseResult.highlightCount} highlight{csvParseResult.highlightCount !== 1 ? "s" : ""} in CSV</div>
                     <button className="btn btn-secondary" onClick={function() {
-                      var content = generateHighlightsSRT(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB);
+                      var content = generateHighlightsSRT(csvParseResult.pointLog, 0, csvParseResult.teamA, csvParseResult.teamB, 0);
                       if (!content) { window.alert("No highlights found."); return; }
                       var fname = (csvParseResult.teamA + "_vs_" + csvParseResult.teamB).replace(/\s+/g, "_") + "_highlights.srt";
                       setExportModal({ type: "hlsrt", content: content, filename: fname });
