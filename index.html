@@ -300,8 +300,11 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
-    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
+    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+    // Cut at midpoint when set changes so the old score clears before the new set begins
+    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
     lines.push(String(idx));
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
     var hlPrefix = p.highlight ? "\u2605 " : "";
@@ -332,8 +335,10 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) 
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
-    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
+    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
     var dur = endMs - startMs;
     var text = formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     titles += '            <title name="' + text + '" offset="' + toFrac(startMs) + '" duration="' + toFrac(dur) + '">\n';
@@ -415,8 +420,10 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumbe
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
-    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
+    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
     var startT = formatASSTime(startMs);
     var endT = formatASSTime(endMs);
 
@@ -587,10 +594,12 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startSec = (p.timestamp - syncTimestamp) / 1000;
-    var endSec = i < pointLog.length - 1
+    if (startSec < 0) continue;
+    var rawEndSec = i < pointLog.length - 1
       ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000
       : startSec + 10;
-    if (startSec < 0) continue;
+    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
     entries.push({
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
@@ -601,6 +610,13 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
       highlight: p.highlight || false,
       highlightNote: p.highlightNote || null
     });
+    if (isSetBreak) {
+      entries.push({
+        start: Math.round(endSec * 1000) / 1000,
+        end: Math.round(rawEndSec * 1000) / 1000,
+        blank: true
+      });
+    }
   }
 
   var jsonData = JSON.stringify(entries);
@@ -690,7 +706,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     "def draw_score_frame(active):",
     "    img = Image.new('RGB', (WIDTH, HEIGHT), GREEN)",
     "    draw = ImageDraw.Draw(img)",
-    "    if active:",
+    "    if active and not active.get('blank'):",
     "        # -- Score line (large, centered near bottom) --",
     "        score_text = active['score']",
     "        bbox = draw.textbbox((0, 0), score_text, font=font_score)",
@@ -949,8 +965,10 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startSec = (p.timestamp - syncTimestamp) / 1000;
-    var endSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
     if (startSec < 0) continue;
+    var rawEndSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
+    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
     entries.push({
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
@@ -961,6 +979,14 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
       highlight: p.highlight || false,
       highlightNote: p.highlightNote || null
     });
+    // Insert a blank (green) entry for the second half of the inter-set gap
+    if (isSetBreak) {
+      entries.push({
+        start: Math.round(endSec * 1000) / 1000,
+        end: Math.round(rawEndSec * 1000) / 1000,
+        blank: true
+      });
+    }
   }
   return entries;
 }
@@ -1055,8 +1081,10 @@ function parseCSVToEntries(csvText, matchTitle) {
     prevPointsA = d.pointsA;
     prevPointsB = d.pointsB;
     var startSec = d.offset_ms / 1000;
-    var endSec = j < dataRows.length - 1 ? dataRows[j + 1].offset_ms / 1000 : startSec + 10;
     if (startSec < 0) continue;
+    var rawEndSec = j < dataRows.length - 1 ? dataRows[j + 1].offset_ms / 1000 : startSec + 10;
+    var csvIsSetBreak = j < dataRows.length - 1 && dataRows[j + 1].setNum !== d.setNum;
+    var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
     entries.push({
       start: Math.round(startSec * 1000) / 1000,
       end: Math.round(endSec * 1000) / 1000,
@@ -1067,6 +1095,13 @@ function parseCSVToEntries(csvText, matchTitle) {
       highlight: d.highlight || false,
       highlightNote: d.highlightNote || null,
     });
+    if (csvIsSetBreak) {
+      entries.push({
+        start: Math.round(endSec * 1000) / 1000,
+        end: Math.round(rawEndSec * 1000) / 1000,
+        blank: true,
+      });
+    }
     // pointLog uses timestamp=offset_ms so generateYouTubeChapters/generateHighlightsSRT work with syncTimestamp=0
     pointLog.push({
       timestamp: d.offset_ms,
@@ -1301,7 +1336,8 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
     for (var j = 0; j < entries.length; j++) {
       if (encoderError) throw encoderError;
       var entry = entries[j];
-      renderOverlayFrame(ctx, entry, WIDTH, HEIGHT, positionTop);
+      // Blank entries (inter-set gap) render as a plain green frame
+      renderOverlayFrame(ctx, entry.blank ? null : entry, WIDTH, HEIGHT, positionTop);
       var entryBitmap = await createImageBitmap(canvas);
       var ets = Math.round(entry.start * 1000000);
       var ete = Math.round(entry.end * 1000000);
