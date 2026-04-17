@@ -485,18 +485,24 @@ function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumbe
     }
   }
 
-  // Add highlight chapters
+  // Add highlight chapters — skip if timestamp coincides with a set boundary
+  var setFirstMsValues = {};
+  for (var setKey in setFirstMs) { setFirstMsValues[setFirstMs[setKey]] = true; }
   for (var k = 0; k < pointLog.length; k++) {
     var ph = pointLog[k];
     if (!ph.highlight) continue;
     var offsetMs = ph.timestamp - syncTimestamp;
     if (offsetMs < 0) continue;
+    // When a highlight is the first point of a set, it coincides with the set boundary chapter.
+    // Skip the highlight chapter to avoid duplicate timestamps that break ascending order.
+    var effectiveMs = (set1AtZero && ph.setNum === 1) ? 0 : offsetMs;
+    if (setFirstMsValues[effectiveMs]) continue;
     var hlText = "\u2605 " + teamA + " " + ph.pointsA + "-" + ph.pointsB + " " + teamB + " (" + formatSetLabel(ph.setNum, setNumberOffset) + ")";
     if (ph.highlightNote) hlText += " [" + ph.highlightNote + "]";
-    chapters.push({ timeMs: offsetMs, text: hlText });
+    chapters.push({ timeMs: effectiveMs, text: hlText });
   }
 
-  // Sort chronologically, stable: boundaries before highlights at same time
+  // Sort chronologically
   chapters.sort(function(a, b) { return a.timeMs - b.timeMs; });
 
   return chapters;
