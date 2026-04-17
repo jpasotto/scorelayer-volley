@@ -301,10 +301,22 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
     if (startMs < 0) continue;
-    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
+    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
+    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartMs = pointLog[i - 1].timestamp - syncTimestamp;
+      if (rallyStartMs >= 0) startMs = rallyStartMs;
+    }
+    // If the next point is a highlight in the same set its start will be shifted back to
+    // this point's timestamp, so cap our end there to avoid overlapping subtitle entries
+    var nextP = i < pointLog.length - 1 ? pointLog[i + 1] : null;
+    var nextHighlightSameSet = nextP && nextP.highlight && nextP.setNum === p.setNum;
+    var rawEndMs = nextHighlightSameSet
+      ? (p.timestamp - syncTimestamp)
+      : (nextP ? nextP.timestamp - syncTimestamp : startMs + 10000);
     // Cut at midpoint when set changes so the old score clears before the new set begins
-    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    var isSetBreak = nextP && nextP.setNum !== p.setNum;
     var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
+    if (endMs <= startMs) continue; // skip zero-duration entries absorbed by adjacent highlight
     lines.push(String(idx));
     lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
     var hlPrefix = p.highlight ? "\u2605 " : "";
@@ -336,9 +348,19 @@ function generateFCPXML(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) 
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
     if (startMs < 0) continue;
-    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
-    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
+    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartMs = pointLog[i - 1].timestamp - syncTimestamp;
+      if (rallyStartMs >= 0) startMs = rallyStartMs;
+    }
+    var nextP = i < pointLog.length - 1 ? pointLog[i + 1] : null;
+    var nextHighlightSameSet = nextP && nextP.highlight && nextP.setNum === p.setNum;
+    var rawEndMs = nextHighlightSameSet
+      ? (p.timestamp - syncTimestamp)
+      : (nextP ? nextP.timestamp - syncTimestamp : startMs + 10000);
+    var isSetBreak = nextP && nextP.setNum !== p.setNum;
     var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
+    if (endMs <= startMs) continue;
     var dur = endMs - startMs;
     var text = formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     titles += '            <title name="' + text + '" offset="' + toFrac(startMs) + '" duration="' + toFrac(dur) + '">\n';
@@ -421,9 +443,19 @@ function generateASS(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumbe
     var p = pointLog[i];
     var startMs = p.timestamp - syncTimestamp;
     if (startMs < 0) continue;
-    var rawEndMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
-    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
+    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartMs = pointLog[i - 1].timestamp - syncTimestamp;
+      if (rallyStartMs >= 0) startMs = rallyStartMs;
+    }
+    var nextP = i < pointLog.length - 1 ? pointLog[i + 1] : null;
+    var nextHighlightSameSet = nextP && nextP.highlight && nextP.setNum === p.setNum;
+    var rawEndMs = nextHighlightSameSet
+      ? (p.timestamp - syncTimestamp)
+      : (nextP ? nextP.timestamp - syncTimestamp : startMs + 10000);
+    var isSetBreak = nextP && nextP.setNum !== p.setNum;
     var endMs = isSetBreak ? Math.round((startMs + rawEndMs) / 2) : rawEndMs;
+    if (endMs <= startMs) continue;
     var startT = formatASSTime(startMs);
     var endT = formatASSTime(endMs);
 
@@ -567,8 +599,13 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB) {
     var p = pointLog[i];
     if (!p.highlight) continue;
     var startMs = p.timestamp - syncTimestamp;
-    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     if (startMs < 0) continue;
+    // Extend start back to rally beginning (prev point's timestamp), same set only
+    if (i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartMs = pointLog[i - 1].timestamp - syncTimestamp;
+      if (rallyStartMs >= 0) startMs = rallyStartMs;
+    }
+    var endMs = i < pointLog.length - 1 ? pointLog[i + 1].timestamp - syncTimestamp : startMs + 10000;
     var text = "\u2605 Set " + p.setNum + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     if (p.highlightNote) text += " [" + p.highlightNote + "]";
     lines.push(String(idx));
@@ -595,6 +632,17 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     var p = pointLog[i];
     var startSec = (p.timestamp - syncTimestamp) / 1000;
     if (startSec < 0) continue;
+    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
+    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartSec = (pointLog[i - 1].timestamp - syncTimestamp) / 1000;
+      if (rallyStartSec >= 0) {
+        startSec = rallyStartSec;
+        // Truncate previous entry's end to avoid timestamp overlap
+        if (entries.length > 0 && !entries[entries.length - 1].blank) {
+          entries[entries.length - 1].end = Math.round(startSec * 1000) / 1000;
+        }
+      }
+    }
     var rawEndSec = i < pointLog.length - 1
       ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000
       : startSec + 10;
@@ -618,6 +666,7 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
       });
     }
   }
+  entries = entries.filter(function(e) { return e.end > e.start; });
 
   var jsonData = JSON.stringify(entries);
 
@@ -966,6 +1015,17 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
     var p = pointLog[i];
     var startSec = (p.timestamp - syncTimestamp) / 1000;
     if (startSec < 0) continue;
+    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
+    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var rallyStartSec = (pointLog[i - 1].timestamp - syncTimestamp) / 1000;
+      if (rallyStartSec >= 0) {
+        startSec = rallyStartSec;
+        // Truncate previous entry's end to avoid overlapping timestamps in VideoEncoder
+        if (entries.length > 0 && !entries[entries.length - 1].blank) {
+          entries[entries.length - 1].end = Math.round(startSec * 1000) / 1000;
+        }
+      }
+    }
     var rawEndSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
     var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
     var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
@@ -988,7 +1048,8 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
       });
     }
   }
-  return entries;
+  // Remove zero-duration entries (can occur when a highlight absorbs the preceding point's window)
+  return entries.filter(function(e) { return e.end > e.start; });
 }
 
 
