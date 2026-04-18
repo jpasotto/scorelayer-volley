@@ -188,7 +188,7 @@ var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
-var APP_VERSION = "2.9.3";
+var APP_VERSION = "2.9.4";
 
 var HIGHLIGHT_PILL_MS = 8000;
 var HIGHLIGHT_PILL_EXTEND_MS = 8000;
@@ -838,29 +838,64 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     "    if not active or active.get('blank'):",
     "        return img",
     "    if active.get('type') == 'qr':",
-    "        PILL_W, PILL_H, PILL_R = 400, 264, 14",
-    "        pill_x = (WIDTH - PILL_W) // 2",
-    "        pill_y = 42",
+    "        # Full score bar",
+    "        score_text = active['score']",
+    "        bbox = draw.textbbox((0, 0), score_text, font=font_score)",
+    "        tw = bbox[2] - bbox[0]",
+    "        sx = (WIDTH - tw) // 2",
+    "        sy = HEIGHT - 130",
+    "        for dx in range(-3, 4):",
+    "            for dy in range(-3, 4):",
+    "                draw.text((sx + dx, sy + dy), score_text, font=font_score, fill=BLACK)",
+    "        draw.text((sx, sy), score_text, font=font_score, fill=WHITE)",
+    "        sy2 = HEIGHT - 180",
+    "        set_text = active['set_info']",
+    "        bbox2 = draw.textbbox((0, 0), set_text, font=font_set)",
+    "        tw2 = bbox2[2] - bbox2[0]",
+    "        sx2 = (WIDTH - tw2) // 2",
+    "        for dx in range(-2, 3):",
+    "            for dy in range(-2, 3):",
+    "                draw.text((sx2 + dx, sy2 + dy), set_text, font=font_set, fill=BLACK)",
+    "        draw.text((sx2, sy2), set_text, font=font_set, fill=CYAN)",
+    "        title_text = active.get('title', '')",
+    "        if title_text:",
+    "            for dx in range(-2, 3):",
+    "                for dy in range(-2, 3):",
+    "                    draw.text((80 + dx, sy2 + dy), title_text, font=font_set, fill=BLACK)",
+    "            draw.text((80, sy2), title_text, font=font_set, fill=CYAN)",
+    "        sets_text = active.get('sets_score', '')",
+    "        if sets_text:",
+    "            bbox3 = draw.textbbox((0, 0), sets_text, font=font_set)",
+    "            tw3 = bbox3[2] - bbox3[0]",
+    "            sx3 = WIDTH - 80 - tw3",
+    "            for dx in range(-2, 3):",
+    "                for dy in range(-2, 3):",
+    "                    draw.text((sx3 + dx, sy2 + dy), sets_text, font=font_set, fill=BLACK)",
+    "            draw.text((sx3, sy2), sets_text, font=font_set, fill=CYAN)",
+    "        # QR card: right-aligned, bigger",
+    "        QR_SIZE = 260",
+    "        PILL_W, PILL_R = 340, 14",
+    "        TITLE_H, URL_H = 46, 36",
+    "        PILL_H = TITLE_H + QR_SIZE + URL_H",
+    "        MARGIN = 60",
+    "        pill_x = WIDTH - PILL_W - MARGIN",
+    "        pill_y = sy2 - PILL_H - 16",
     "        draw.rounded_rectangle(",
     "            [pill_x, pill_y, pill_x + PILL_W, pill_y + PILL_H],",
     "            radius=PILL_R, fill=(255, 255, 255)",
     "        )",
-    "        font_claim = load_font(26)",
-    "        draw.text((WIDTH // 2, pill_y + 12), 'titles made with ScoreLayer',",
+    "        font_claim = load_font(22)",
+    "        card_cx = pill_x + PILL_W // 2",
+    "        draw.text((card_cx, pill_y + 12), 'titles made with ScoreLayer',",
     "                  font=font_claim, fill=(17, 17, 17), anchor='mt')",
     "        try:",
-    "            qr_img = Image.open(io.BytesIO(base64.b64decode(QR_B64))).resize((160, 160))",
-    "            img.paste(qr_img, ((WIDTH - 160) // 2, pill_y + 50))",
+    "            qr_img = Image.open(io.BytesIO(base64.b64decode(QR_B64))).resize((QR_SIZE, QR_SIZE))",
+    "            img.paste(qr_img, (pill_x + (PILL_W - QR_SIZE) // 2, pill_y + TITLE_H))",
     "        except Exception:",
     "            pass",
-    "        font_url = load_font(18)",
-    "        draw.text((WIDTH // 2, pill_y + 218), 'jpasotto.github.io/scorelayer-volley',",
+    "        font_url = load_font(16)",
+    "        draw.text((card_cx, pill_y + TITLE_H + QR_SIZE + 8), 'jpasotto.github.io/scorelayer-volley',",
     "                  font=font_url, fill=(85, 85, 85), anchor='mt')",
-    "        sets_text = active.get('sets_score', '')",
-    "        if sets_text:",
-    "            bbox = draw.textbbox((0, 0), sets_text, font=font_set)",
-    "            tw = bbox[2] - bbox[0]",
-    "            draw.text((WIDTH - 80 - tw, 50), sets_text, font=font_set, fill=CYAN)",
     "        return img",
     "    if active and not active.get('blank'):",
     "        # -- Score line (large, centered near bottom) --",
@@ -1424,21 +1459,66 @@ function renderQRFrame(ctx, entry, width, height, positionTop, qrBitmap, alpha) 
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#00ff00';
   ctx.fillRect(0, 0, width, height);
+  if (!entry) return;
 
-  var QR_SIZE  = 160;
-  var PILL_W   = 400;
-  var PILL_H   = 264;
-  var PILL_R   = 14;
-  var cx       = width / 2;
-
-  var pillY;
+  // --- Full score bar (identical to renderOverlayFrame) ---
+  ctx.shadowColor = '#000000';
+  var scoreY, infoY;
   if (positionTop !== false) {
-    pillY = 42;
+    ctx.textBaseline = 'top';
+    infoY  = 50;
+    scoreY = 50 + 36 + 14;
   } else {
-    pillY = height - 60 - PILL_H + 20;
+    ctx.textBaseline = 'bottom';
+    scoreY = height - 60;
+    infoY  = height - 145;
   }
 
-  var pillX = cx - PILL_W / 2;
+  ctx.font = 'bold 72px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+  ctx.fillText(entry.score, width / 2, scoreY);
+
+  ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#00ccff';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 2;
+  ctx.textAlign = 'center';
+  ctx.fillText(entry.set_info, width / 2, infoY);
+  if (entry.title) {
+    ctx.textAlign = 'left';
+    ctx.fillText(entry.title, 80, infoY);
+  }
+  if (entry.sets_score) {
+    ctx.textAlign = 'right';
+    ctx.fillText(entry.sets_score, width - 80, infoY);
+  }
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // --- QR card: right-aligned, bigger ---
+  var QR_SIZE = 260;
+  var PILL_W  = 340;
+  var PILL_R  = 14;
+  var MARGIN  = 60;
+  var TITLE_H = 46;
+  var URL_H   = 36;
+  var PILL_H  = TITLE_H + QR_SIZE + URL_H;
+
+  var pillX = width - PILL_W - MARGIN;
+  var pillY;
+  if (positionTop !== false) {
+    pillY = scoreY + 72 + 16;
+  } else {
+    pillY = (infoY - 36) - PILL_H - 16;
+  }
 
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
@@ -1448,40 +1528,25 @@ function renderQRFrame(ctx, entry, width, height, positionTop, qrBitmap, alpha) 
   ctx.roundRect(pillX, pillY, PILL_W, PILL_H, PILL_R);
   ctx.fill();
 
+  var cardCx = pillX + PILL_W / 2;
+
   ctx.fillStyle = '#111111';
-  ctx.font = 'bold italic 26px Arial, Helvetica, sans-serif';
+  ctx.font = 'bold italic 22px Arial, Helvetica, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.shadowBlur = 0;
-  ctx.fillText('titles made with ScoreLayer', cx, pillY + 12);
+  ctx.fillText('titles made with ScoreLayer', cardCx, pillY + 12);
 
   if (qrBitmap) {
-    var qrX = cx - QR_SIZE / 2;
-    var qrY = pillY + 50;
+    var qrX = pillX + (PILL_W - QR_SIZE) / 2;
+    var qrY = pillY + TITLE_H;
     ctx.drawImage(qrBitmap, qrX, qrY, QR_SIZE, QR_SIZE);
-
     ctx.fillStyle = '#555555';
-    ctx.font = '18px Arial, Helvetica, sans-serif';
-    ctx.fillText('jpasotto.github.io/scorelayer-volley', cx, qrY + QR_SIZE + 8);
+    ctx.font = '16px Arial, Helvetica, sans-serif';
+    ctx.fillText('jpasotto.github.io/scorelayer-volley', cardCx, qrY + QR_SIZE + 8);
   }
 
   ctx.restore();
-
-  if (entry && entry.sets_score) {
-    ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
-    ctx.fillStyle = '#00ccff';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = positionTop !== false ? 'top' : 'bottom';
-    var setsY = positionTop !== false ? 50 : (height - 145);
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 2;
-    ctx.shadowOffsetY = 2;
-    ctx.fillText(entry.sets_score, width - 80, setsY);
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-  }
 }
 
 function renderOverlayFrame(ctx, entry, width, height, positionTop, qrBitmap, alpha) {
