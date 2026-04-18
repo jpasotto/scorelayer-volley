@@ -1320,31 +1320,71 @@ function parseCSVToEntries(csvText, matchTitle) {
       ? (d.offset_ms / 1000)
       : (csvNextP ? csvNextP.offset_ms / 1000 : startSec + 10);
     var csvIsSetBreak = csvNextP && csvNextP.setNum !== d.setNum;
-    var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-    if (endSec <= startSec) continue;
-    entries.push({
-      start: Math.round(startSec * 1000) / 1000,
-      end: Math.round(endSec * 1000) / 1000,
-      score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
-      set_info: "Set " + d.setNum,
-      title: title,
-      sets_score: "Sets " + setsA + ":" + setsB,
-      highlight: d.highlight || false,
-      highlightNote: d.highlightNote || null,
-    });
-    if (csvIsSetBreak) {
+    var csvSetWon = isSetWon(d.pointsA, d.pointsB, getTargetPoints(setsA, setsB));
+    var csvGapSec = rawEndSec - startSec;
+    var QR_LEAD_CSV = 20, QR_TRAIL_CSV = 40, MIN_GAP_CSV = 61;
+
+    if (csvIsSetBreak && csvSetWon && csvGapSec >= MIN_GAP_CSV) {
+      var csvNewSetsA = setsA + (d.pointsA > d.pointsB ? 1 : 0);
+      var csvNewSetsB = setsB + (d.pointsB > d.pointsA ? 1 : 0);
+      var csvQrStart = startSec + QR_LEAD_CSV;
+      var csvQrEnd   = rawEndSec - QR_TRAIL_CSV;
       entries.push({
-        start: Math.round(endSec * 1000) / 1000,
-        end: Math.round(rawEndSec * 1000) / 1000,
-        blank: true,
+        type: 'score',
+        start: Math.round(startSec   * 1000) / 1000,
+        end:   Math.round(csvQrStart * 1000) / 1000,
+        score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
+        set_info: "Set " + d.setNum, title: title,
+        sets_score: "Sets " + setsA + ":" + setsB,
+        highlight: false, highlightNote: null,
       });
+      entries.push({
+        type: 'qr',
+        start: Math.round(csvQrStart * 1000) / 1000,
+        end:   Math.round(csvQrEnd   * 1000) / 1000,
+        score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
+        set_info: "Set " + d.setNum, title: title,
+        sets_score: "Sets " + csvNewSetsA + ":" + csvNewSetsB,
+        highlight: false, highlightNote: null,
+      });
+      entries.push({
+        type: 'reset',
+        start: Math.round(csvQrEnd   * 1000) / 1000,
+        end:   Math.round(rawEndSec  * 1000) / 1000,
+        score: teamA + "  0 : 0  " + teamB,
+        set_info: "Set " + (d.setNum + 1), title: title,
+        sets_score: "Sets " + csvNewSetsA + ":" + csvNewSetsB,
+        highlight: false, highlightNote: null,
+      });
+    } else {
+      var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
+      if (endSec <= startSec) continue;
+      entries.push({
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(endSec   * 1000) / 1000,
+        score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
+        set_info: "Set " + d.setNum, title: title,
+        sets_score: "Sets " + setsA + ":" + setsB,
+        highlight: d.highlight || false, highlightNote: d.highlightNote || null,
+      });
+      if (csvIsSetBreak) {
+        entries.push({
+          start: Math.round(endSec    * 1000) / 1000,
+          end:   Math.round(rawEndSec * 1000) / 1000,
+          blank: true,
+        });
+      }
     }
     // pointLog uses timestamp=offset_ms so generateYouTubeChapters/generateHighlightsSRT work with syncTimestamp=0
     pointLog.push({
       timestamp: d.offset_ms,
       pointsA: d.pointsA,
       pointsB: d.pointsB,
+      setsA: setsA,
+      setsB: setsB,
       setNum: d.setNum,
+      setWon: isSetWon(d.pointsA, d.pointsB, getTargetPoints(setsA, setsB)),
       highlight: d.highlight || false,
       highlightNote: d.highlightNote || null,
     });
