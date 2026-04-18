@@ -188,7 +188,7 @@ var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
-var APP_VERSION = "2.8";
+var APP_VERSION = "2.9";
 
 var HIGHLIGHT_PILL_MS = 8000;
 var HIGHLIGHT_PILL_EXTEND_MS = 8000;
@@ -202,6 +202,22 @@ var YOUTUBE_CHAPTER_RULES = {
   ASCENDING_ORDER: true,     // Strictly ascending timestamps
   SECOND_WITHIN_SEC: 600,    // Second chapter must start within first 10 min
 };
+
+// --- QR overlay ---
+var QR_BASE64 = 'data:image/png;base64,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';
+var _qrImageCache = null;
+
+async function getQRImageBitmap() {
+  if (_qrImageCache) return _qrImageCache;
+  var img = new Image();
+  img.src = QR_BASE64;
+  await new Promise(function(res, rej) {
+    img.onload = res;
+    img.onerror = rej;
+  });
+  _qrImageCache = await createImageBitmap(img);
+  return _qrImageCache;
+}
 
 // --- Analytics ---
 function trackEvent(category, action, name, value) {
@@ -641,6 +657,9 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
   var fname = "volleyball_" + teamA + "_vs_" + teamB;
 
   // Build JSON data for the Python script - includes title and sets_score per entry
+  var QR_LEAD_CS  = 20;
+  var QR_TRAIL_CS = 40;
+  var MIN_GAP_CS  = QR_LEAD_CS + QR_TRAIL_CS + 1;
   var entries = [];
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
@@ -660,24 +679,69 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     var rawEndSec = i < pointLog.length - 1
       ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000
       : startSec + 10;
-    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
-    var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-    entries.push({
-      start: Math.round(startSec * 1000) / 1000,
-      end: Math.round(endSec * 1000) / 1000,
-      score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: formatSetLabel(p.setNum, setNumberOffset),
-      title: title,
-      sets_score: "Sets " + p.setsA + ":" + p.setsB,
-      highlight: p.highlight || false,
-      highlightNote: p.highlightNote || null
-    });
-    if (isSetBreak) {
+
+    var csA = p.setsA || 0;
+    var csB = p.setsB || 0;
+    var isSetEnd = p.setWon === true && i < pointLog.length - 1;
+    var gapSec   = rawEndSec - startSec;
+
+    if (isSetEnd && gapSec >= MIN_GAP_CS) {
+      var newSetsA = csA + (p.pointsA > p.pointsB ? 1 : 0);
+      var newSetsB = csB + (p.pointsB > p.pointsA ? 1 : 0);
+      var qrStart  = startSec + QR_LEAD_CS;
+      var qrEnd    = rawEndSec - QR_TRAIL_CS;
+
       entries.push({
-        start: Math.round(endSec * 1000) / 1000,
-        end: Math.round(rawEndSec * 1000) / 1000,
-        blank: true
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(qrStart  * 1000) / 1000,
+        score: teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info: formatSetLabel(p.setNum, setNumberOffset),
+        title: title,
+        sets_score: 'Sets ' + csA + ':' + csB,
+        highlight: false, highlightNote: null
       });
+      entries.push({
+        type: 'qr',
+        start: Math.round(qrStart * 1000) / 1000,
+        end:   Math.round(qrEnd   * 1000) / 1000,
+        score: teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info: formatSetLabel(p.setNum, setNumberOffset),
+        title: title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null
+      });
+      entries.push({
+        type: 'reset',
+        start: Math.round(qrEnd     * 1000) / 1000,
+        end:   Math.round(rawEndSec * 1000) / 1000,
+        score: teamA + '  0 : 0  ' + teamB,
+        set_info: formatSetLabel(p.setNum + 1, setNumberOffset),
+        title: title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null
+      });
+    } else {
+      var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+      var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
+      entries.push({
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(endSec   * 1000) / 1000,
+        score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
+        set_info: formatSetLabel(p.setNum, setNumberOffset),
+        title: title,
+        sets_score: "Sets " + csA + ":" + csB,
+        highlight: p.highlight || false,
+        highlightNote: p.highlightNote || null
+      });
+      if (isSetBreak) {
+        entries.push({
+          start: Math.round(endSec * 1000) / 1000,
+          end:   Math.round(rawEndSec * 1000) / 1000,
+          blank: true
+        });
+      }
     }
   }
   entries = entries.filter(function(e) { return e.end > e.start; });
@@ -735,10 +799,12 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     "# --- Python keyframe generator ---",
     "python3 << 'PYTHON_SCRIPT'",
     "import json, os, sys",
+    "import base64, io",
     "from PIL import Image, ImageDraw, ImageFont",
     "",
     "WIDTH, HEIGHT = 1920, 1080",
     'FRAMES_DIR = os.environ.get("FRAMES_DIR", "/tmp/volley_frames")',
+    "QR_B64 = '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'",
     "",
     "entries = json.loads('" + jsonData.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "')",
     "",
@@ -769,6 +835,33 @@ function generateChromaScript(pointLog, syncTimestamp, teamA, teamB, matchTitle,
     "def draw_score_frame(active):",
     "    img = Image.new('RGB', (WIDTH, HEIGHT), GREEN)",
     "    draw = ImageDraw.Draw(img)",
+    "    if not active or active.get('blank'):",
+    "        return img",
+    "    if active.get('type') == 'qr':",
+    "        PILL_W, PILL_H, PILL_R = 400, 264, 14",
+    "        pill_x = (WIDTH - PILL_W) // 2",
+    "        pill_y = 42",
+    "        draw.rounded_rectangle(",
+    "            [pill_x, pill_y, pill_x + PILL_W, pill_y + PILL_H],",
+    "            radius=PILL_R, fill=(255, 255, 255)",
+    "        )",
+    "        font_claim = load_font(26)",
+    "        draw.text((WIDTH // 2, pill_y + 12), 'titles made with ScoreLayer',",
+    "                  font=font_claim, fill=(17, 17, 17), anchor='mt')",
+    "        try:",
+    "            qr_img = Image.open(io.BytesIO(base64.b64decode(QR_B64))).resize((160, 160))",
+    "            img.paste(qr_img, ((WIDTH - 160) // 2, pill_y + 50))",
+    "        except Exception:",
+    "            pass",
+    "        font_url = load_font(18)",
+    "        draw.text((WIDTH // 2, pill_y + 218), 'jpasotto.github.io/scorelayer-volley',",
+    "                  font=font_url, fill=(85, 85, 85), anchor='mt')",
+    "        sets_text = active.get('sets_score', '')",
+    "        if sets_text:",
+    "            bbox = draw.textbbox((0, 0), sets_text, font=font_set)",
+    "            tw = bbox[2] - bbox[0]",
+    "            draw.text((WIDTH - 80 - tw, 50), sets_text, font=font_set, fill=CYAN)",
+    "        return img",
     "    if active and not active.get('blank'):",
     "        # -- Score line (large, centered near bottom) --",
     "        score_text = active['score']",
@@ -1024,7 +1117,12 @@ function generateReadme(teamA, teamB) {
 function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
   if (!syncTimestamp || pointLog.length === 0) return [];
   var title = (matchTitle || "").trim();
+  var QR_LEAD  = 20;
+  var QR_TRAIL = 40;
+  var MIN_GAP  = QR_LEAD + QR_TRAIL + 1; // 61s guard
+
   var entries = [];
+
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     var startSec = (p.timestamp - syncTimestamp) / 1000;
@@ -1041,28 +1139,76 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
       }
     }
     var rawEndSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
-    var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
-    var endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-    entries.push({
-      start: Math.round(startSec * 1000) / 1000,
-      end: Math.round(endSec * 1000) / 1000,
-      score: teamA + "  " + p.pointsA + " : " + p.pointsB + "  " + teamB,
-      set_info: formatSetLabel(p.setNum, setNumberOffset),
-      title: title,
-      sets_score: "Sets " + p.setsA + ":" + p.setsB,
-      highlight: p.highlight || false,
-      highlightNote: p.highlightNote || null
-    });
-    // Insert a blank (green) entry for the second half of the inter-set gap
-    if (isSetBreak) {
+    var endSec = rawEndSec;
+
+    var setsA = p.setsA || 0;
+    var setsB = p.setsB || 0;
+
+    var isSetEnd = p.setWon === true && i < pointLog.length - 1;
+    var gapSec   = rawEndSec - startSec;
+
+    if (isSetEnd && gapSec >= MIN_GAP) {
+      var newSetsA = setsA + (p.pointsA > p.pointsB ? 1 : 0);
+      var newSetsB = setsB + (p.pointsB > p.pointsA ? 1 : 0);
+      var qrStart  = startSec + QR_LEAD;
+      var qrEnd    = rawEndSec - QR_TRAIL;
+
       entries.push({
-        start: Math.round(endSec * 1000) / 1000,
-        end: Math.round(rawEndSec * 1000) / 1000,
-        blank: true
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(qrStart  * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + setsA + ':' + setsB,
+        highlight: false, highlightNote: null, highlightTag: null
       });
+
+      entries.push({
+        type: 'qr',
+        start: Math.round(qrStart * 1000) / 1000,
+        end:   Math.round(qrEnd   * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null, highlightTag: null
+      });
+
+      entries.push({
+        type: 'reset',
+        start: Math.round(qrEnd  * 1000) / 1000,
+        end:   Math.round(rawEndSec * 1000) / 1000,
+        score:      teamA + '  0 : 0  ' + teamB,
+        set_info:   formatSetLabel(p.setNum + 1, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null, highlightTag: null
+      });
+
+    } else {
+      var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+      endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
+      entries.push({
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(endSec   * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + setsA + ':' + setsB,
+        highlight: p.highlight || false,
+        highlightNote: p.highlightNote || null
+      });
+      if (isSetBreak) {
+        entries.push({
+          start: Math.round(endSec * 1000) / 1000,
+          end:   Math.round(rawEndSec * 1000) / 1000,
+          blank: true
+        });
+      }
     }
   }
-  // Remove zero-duration entries (can occur when a highlight absorbs the preceding point's window)
   return entries.filter(function(e) { return e.end > e.start; });
 }
 
@@ -1234,7 +1380,78 @@ function parseCSVRow(line) {
 // Renders one frame onto a 2D canvas context.
 // entry = null -> blank green frame (used for the pre-match gap).
 // positionTop = true -> text at top of frame; false -> bottom (legacy).
-function renderOverlayFrame(ctx, entry, width, height, positionTop) {
+function renderQRFrame(ctx, entry, width, height, positionTop, qrBitmap, alpha) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(0, 0, width, height);
+
+  var QR_SIZE  = 160;
+  var PILL_W   = 400;
+  var PILL_H   = 264;
+  var PILL_R   = 14;
+  var cx       = width / 2;
+
+  var pillY;
+  if (positionTop !== false) {
+    pillY = 42;
+  } else {
+    pillY = height - 60 - PILL_H + 20;
+  }
+
+  var pillX = cx - PILL_W / 2;
+
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+  ctx.fillStyle = 'rgba(255,255,255,0.93)';
+  ctx.beginPath();
+  ctx.roundRect(pillX, pillY, PILL_W, PILL_H, PILL_R);
+  ctx.fill();
+
+  ctx.fillStyle = '#111111';
+  ctx.font = 'bold italic 26px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.shadowBlur = 0;
+  ctx.fillText('titles made with ScoreLayer', cx, pillY + 12);
+
+  if (qrBitmap) {
+    var qrX = cx - QR_SIZE / 2;
+    var qrY = pillY + 50;
+    ctx.drawImage(qrBitmap, qrX, qrY, QR_SIZE, QR_SIZE);
+
+    ctx.fillStyle = '#555555';
+    ctx.font = '18px Arial, Helvetica, sans-serif';
+    ctx.fillText('jpasotto.github.io/scorelayer-volley', cx, qrY + QR_SIZE + 8);
+  }
+
+  ctx.restore();
+
+  if (entry && entry.sets_score) {
+    ctx.font = 'bold 36px Arial, Helvetica, sans-serif';
+    ctx.fillStyle = '#00ccff';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = positionTop !== false ? 'top' : 'bottom';
+    var setsY = positionTop !== false ? 50 : (height - 145);
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    ctx.fillText(entry.sets_score, width - 80, setsY);
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
+}
+
+function renderOverlayFrame(ctx, entry, width, height, positionTop, qrBitmap, alpha) {
+  if (entry && entry.type === 'qr') {
+    renderQRFrame(ctx, entry, width, height, positionTop,
+                  qrBitmap || null,
+                  alpha !== undefined ? alpha : 1.0);
+    return;
+  }
+
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#00ff00';
   ctx.fillRect(0, 0, width, height);
@@ -1424,33 +1641,74 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
       if (encoderError) throw encoderError;
     }
 
+    // Pre-resolve QR bitmap once before the loop
+    var hasQREntries = entries.some(function(e) { return e.type === 'qr'; });
+    var qrBitmap = null;
+    if (hasQREntries) {
+      try { qrBitmap = await getQRImageBitmap(); } catch(e) { /* skip QR if asset fails */ }
+    }
+
     // One canvas render per score change, chunked into <=2-second VideoFrames.
     for (var j = 0; j < entries.length; j++) {
       if (encoderError) throw encoderError;
       var entry = entries[j];
-      // Blank entries (inter-set gap) render as a plain green frame
-      renderOverlayFrame(ctx, entry.blank ? null : entry, WIDTH, HEIGHT, positionTop);
-      var entryBitmap = await createImageBitmap(canvas);
+
       var ets = Math.round(entry.start * 1000000);
       var ete = Math.round(entry.end * 1000000);
       var ekey = true;
-      while (ets < ete) {
-        var edur = Math.min(MAX_CHUNK_US, ete - ets);
-        // Backpressure: wait if encoder queue exceeds 5
-        while (encodeQueueSize > 5) {
-          await new Promise(function(r) { setTimeout(r, 10); });
-          if (encoderError) throw encoderError;
+
+      if (entry.type === 'qr') {
+        // QR entries: render per chunk to support per-chunk fade alpha
+        while (ets < ete) {
+          var edur = Math.min(MAX_CHUNK_US, ete - ets);
+          var FADE_US      = 1000000;
+          var entryStartUs = Math.round(entry.start * 1000000);
+          var entryEndUs   = Math.round(entry.end   * 1000000);
+          var chunkMidUs   = (ets + Math.min(ete, ets + MAX_CHUNK_US)) / 2;
+          var elapsedUs    = chunkMidUs - entryStartUs;
+          var remainUs     = entryEndUs - chunkMidUs;
+          var fadeIn       = Math.min(elapsedUs / FADE_US, 1.0);
+          var fadeOut      = Math.min(remainUs  / FADE_US, 1.0);
+          var frameAlpha   = Math.max(0, Math.min(fadeIn, fadeOut));
+
+          renderOverlayFrame(ctx, entry, WIDTH, HEIGHT, positionTop, qrBitmap, frameAlpha);
+          var chunkBitmap = await createImageBitmap(canvas);
+
+          while (encodeQueueSize > 5) {
+            await new Promise(function(r) { setTimeout(r, 10); });
+            if (encoderError) throw encoderError;
+          }
+          var vf = new VideoFrame(chunkBitmap, { timestamp: ets, duration: edur });
+          encodeQueueSize++;
+          encoder.encode(vf, { keyFrame: ekey });
+          vf.close();
+          chunkBitmap.close();
+          ets += edur;
+          ekey = false;
+          processedChunks++;
+          if (onProgress) onProgress(Math.min(99, Math.round(processedChunks * 100 / totalChunks)));
         }
-        var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
-        encodeQueueSize++;
-        encoder.encode(vf, { keyFrame: ekey });
-        vf.close();
-        ets += edur;
-        ekey = false;
-        processedChunks++;
-        if (onProgress) onProgress(Math.min(99, Math.round(processedChunks * 100 / totalChunks)));
+      } else {
+        // Non-QR entries: render once and reuse bitmap across all chunks
+        renderOverlayFrame(ctx, entry.blank ? null : entry, WIDTH, HEIGHT, positionTop, null, 1.0);
+        var entryBitmap = await createImageBitmap(canvas);
+        while (ets < ete) {
+          var edur = Math.min(MAX_CHUNK_US, ete - ets);
+          while (encodeQueueSize > 5) {
+            await new Promise(function(r) { setTimeout(r, 10); });
+            if (encoderError) throw encoderError;
+          }
+          var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
+          encodeQueueSize++;
+          encoder.encode(vf, { keyFrame: ekey });
+          vf.close();
+          ets += edur;
+          ekey = false;
+          processedChunks++;
+          if (onProgress) onProgress(Math.min(99, Math.round(processedChunks * 100 / totalChunks)));
+        }
+        entryBitmap.close();
       }
-      entryBitmap.close();
     }
 
     await encoder.flush();
@@ -1666,11 +1924,12 @@ function VolleyballTracker() {
       var now = Date.now();
       var pointsA = s.pointsA, pointsB = s.pointsB, setsA = s.setsA, setsB = s.setsB, currentSet = s.currentSet;
       if (team === "A") pointsA++; else pointsB++;
-      var newLog = s.pointLog.concat([{ team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false, highlight: false, highlightNote: null }]);
       var target = getTargetPoints(setsA, setsB);
+      var setWon = isSetWon(pointsA, pointsB, target);
+      var newLog = s.pointLog.concat([{ team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false, highlight: false, highlightNote: null, setWon: setWon }]);
       var matchOver = false;
       var newSetHistory = s.setHistory.slice();
-      if (isSetWon(pointsA, pointsB, target)) {
+      if (setWon) {
         var winnerA = pointsA > pointsB;
         newSetHistory.push({ winnerA: winnerA, scoreA: pointsA, scoreB: pointsB });
         if (s.extraSetMode) {
@@ -1694,7 +1953,7 @@ function VolleyballTracker() {
       var now = Date.now();
       var newPA = team === "A" ? s.pointsA - 1 : s.pointsA;
       var newPB = team === "B" ? s.pointsB - 1 : s.pointsB;
-      var newLog = s.pointLog.concat([{ team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null }]);
+      var newLog = s.pointLog.concat([{ team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null, setWon: false }]);
       return { ...s, pointsA: newPA, pointsB: newPB, pointLog: newLog };
     });
   }, []);
