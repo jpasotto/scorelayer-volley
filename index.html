@@ -514,7 +514,7 @@ function msToChapterTime(ms) {
 }
 
 function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
-  if (!syncTimestamp) return [];
+  if (syncTimestamp == null) return [];
   var chapters = [];
 
   // Collect set-boundary chapters: first point of each set
@@ -616,7 +616,7 @@ function validateYouTubeChapters(chapters) {
 
 // --- Highlights-only SRT export ---
 function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
-  if (!syncTimestamp || pointLog.length === 0) return "";
+  if (syncTimestamp == null || pointLog.length === 0) return "";
   var lines = [];
   var idx = 1;
   for (var i = 0; i < pointLog.length; i++) {
