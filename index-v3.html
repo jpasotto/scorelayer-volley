@@ -251,9 +251,26 @@ var PARENT_HIGHLIGHT_MAX_LEN = 140;
 var PARENT_HIGHLIGHT_THROTTLE_MS = 15000;
 var FIREBASE_READY = false;
 var firebaseAuthPromise = null;
+var firebaseLastError = null;
 
 function isFirebaseConfigured() {
   return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+}
+
+function describeFirebaseError(err) {
+  if (!err) return null;
+  var code = err.code || "";
+  if (code === "auth/admin-restricted-operation" || code === "auth/operation-not-allowed") {
+    return "Anonymous sign-in is disabled. In the Firebase Console open Authentication ▸ Sign-in method and enable Anonymous, then try again.";
+  }
+  if (code === "PERMISSION_DENIED" || code === "permission-denied") {
+    return "Database write rejected. Paste firebase-rules.json into Realtime Database ▸ Rules and click Publish, then try again.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "Network error reaching Firebase. Check your connection and try again.";
+  }
+  if (code) return "Firebase error: " + code;
+  return err.message ? "Firebase error: " + err.message : "Firebase error.";
 }
 
 function initFirebase() {
@@ -266,15 +283,21 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     firebaseAuthPromise = firebase.auth().signInAnonymously().then(function(cred) {
       FIREBASE_READY = true;
+      firebaseLastError = null;
       return cred && cred.user ? cred.user.uid : null;
     }).catch(function(err) {
       console.warn("Firebase anonymous sign-in failed:", err);
       FIREBASE_READY = false;
+      firebaseLastError = err;
+      // Don't cache the failed promise — let the user retry after fixing config.
+      firebaseAuthPromise = null;
       return null;
     });
   } catch (err) {
     console.warn("Firebase init failed:", err);
-    firebaseAuthPromise = Promise.resolve(null);
+    firebaseLastError = err;
+    firebaseAuthPromise = null;
+    return Promise.resolve(null);
   }
   return firebaseAuthPromise;
 }
@@ -2130,6 +2153,7 @@ var sync = (function() {
       return matchId;
     }).catch(function(err) {
       console.warn("sync.createMatch failed:", err);
+      firebaseLastError = err;
       return null;
     });
   }
@@ -2389,9 +2413,14 @@ function ShareModalView(props) {
             <div className="share-hint">
               Generate a link parents in the stands can open to follow the score and submit highlight notes. The video timestamps stay aligned with your sync.
             </div>
+            {props.liveError && (
+              <div className="parent-status err" style={{ marginTop: 12 }}>{props.liveError}</div>
+            )}
             <div className="share-actions" style={{ marginTop: 16 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={props.onClose}>Cancel</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={function() { props.onStart(); }}>Start sharing</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={props.sharePending} onClick={props.onClose}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={props.sharePending} onClick={function() { props.onStart(); }}>
+                {props.sharePending ? "Starting…" : "Start sharing"}
+              </button>
             </div>
           </>
         ) : (
@@ -2458,6 +2487,7 @@ function VolleyballTracker() {
   // Live Share state
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [liveError, setLiveError] = useState(null);
+  const [sharePending, setSharePending] = useState(false);
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
 
@@ -2706,12 +2736,19 @@ function VolleyballTracker() {
       return;
     }
     setLiveError(null);
-    initFirebase().then(function() {
+    setSharePending(true);
+    initFirebase().then(function(uid) {
+      if (!uid) {
+        setSharePending(false);
+        setLiveError(describeFirebaseError(firebaseLastError) || "Could not sign in to Firebase. Check your network and try again.");
+        return;
+      }
       // Use the most recent state captured via setState's updater so the meta seeds correctly.
       setState(function(s) {
         sync.createMatch(s).then(function(matchId) {
+          setSharePending(false);
           if (!matchId) {
-            setLiveError("Could not start share. Check your network and try again.");
+            setLiveError(describeFirebaseError(firebaseLastError) || "Could not start share. Check your network and try again.");
             return;
           }
           setState(function(s2) { return { ...s2, role: "scorekeeper", isShared: true, matchId: matchId }; });
@@ -3142,7 +3179,7 @@ function VolleyballTracker() {
                 <button
                   className="btn btn-small"
                   style={{ background: "rgba(34,197,94,0.15)", color: "var(--success)", marginLeft: 6 }}
-                  onClick={function() { setShareModalOpen(true); }}
+                  onClick={function() { setLiveError(null); setShareModalOpen(true); }}
                 >
                   ● Live
                 </button>
@@ -3150,7 +3187,7 @@ function VolleyballTracker() {
                 <button
                   className="btn btn-small"
                   style={{ marginLeft: 6 }}
-                  onClick={function() { setShareModalOpen(true); }}
+                  onClick={function() { setLiveError(null); setShareModalOpen(true); }}
                 >
                   Share live
                 </button>
@@ -3483,7 +3520,9 @@ function VolleyballTracker() {
       {shareModalOpen && (
         <ShareModalView
           state={state}
-          onClose={function() { setShareModalOpen(false); }}
+          liveError={liveError}
+          sharePending={sharePending}
+          onClose={function() { setShareModalOpen(false); setLiveError(null); }}
           onStart={handleStartShare}
           onStop={handleStopShare}
         />
