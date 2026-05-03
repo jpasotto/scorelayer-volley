@@ -40,3 +40,27 @@ The entire application is a **single `index.html` file** with no build toolchain
 - `POINTS_TO_WIN_SET = 25`, `POINTS_TO_WIN_TIEBREAK = 15`, `SETS_TO_WIN_MATCH = 3`, `MIN_LEAD = 2`
 
 **Sync mechanism:** The "Sync" button records `Date.now()` as `syncTimestamp`. All export timestamps are computed as `pointLog[i].timestamp - syncTimestamp`, so exports are relative to whenever the user pressed Sync (typically at video recording start or first serve).
+
+## Live Share (v3.0, in `index-v3.html`)
+
+A second top-level file, `index-v3.html`, adds an optional Live Share mode on top of the v2.9.4 baseline. The original `index.html` is the production build and is intentionally left untouched until the v3 cutover. Both files share the same origin and `localStorage` (autosave key `scorelayer_match_autosave`); v3's new state fields are additive so v2.9.4 ignores them when reading the cache.
+
+**Roles** (new `state.role`):
+- `solo` — default, identical to v2.9.4 behaviour, no network writes.
+- `scorekeeper` — created by clicking **Share live** in the MATCH header; writes to RTDB.
+- `spectator` — entered automatically when the URL contains `?m={matchId}`; read-only scoreboard plus a parent-highlight submission form.
+
+**Backend:** Firebase Realtime Database, anonymous auth, Spark free tier. Configure once by editing `FIREBASE_CONFIG` near the top of `index-v3.html` with your project's web config. With an empty `databaseURL` the Share UI auto-hides and v3 behaves identically to solo.
+
+**RTDB tree** (`/matches/{matchId}`):
+- `meta/` — scorekeeper-only writes; teamA, teamB, syncTimestamp, scoreboard mirror, `scorekeeperUid`.
+- `points/` — append-only; same shape as the local `pointLog` entries (corrections written as new entries with `correction:true`).
+- `parentHighlights/{pushId}` — any signed-in user appends `{ name?, note, clientTimestamp, serverTimestamp, deleted }`. Scorekeeper alone can flip `deleted:true` to hide an entry.
+
+**Security rules:** see `firebase-rules.json`. Paste into the Firebase console under Realtime Database ▸ Rules. They restrict `meta/` and `points/` writes to the scorekeeper UID, cap parent notes at 140 chars and names at 40 chars, and only allow the scorekeeper to set `deleted`.
+
+**Spectator URL:** `https://<host>/scorelayer-volley/index-v3.html?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
+
+**Parent highlights in exports:** YouTube chapters, CSV, and Highlights SRT all merge accepted (non-deleted) parent submissions in addition to the scorekeeper's `★` highlights. Parent timestamps come from the submitting client's `Date.now()` at button-press, so they align with the same `syncTimestamp` the scorekeeper used.
+
+**Cutover plan:** when v3 is ready to replace v2.9.4, tag the commit (`git tag v2.9.4`), then `git mv index-v3.html index.html`. The PWA `manifest.json` `start_url` already points at `/`, so it picks up the new build on next launch with no config change. Document the cutover in `MEMORY_v3.0.md`.
