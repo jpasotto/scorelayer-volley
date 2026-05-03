@@ -1,0 +1,49 @@
+{
+  "rules": {
+    "matches": {
+      ".read": false,
+      ".write": false,
+      "$matchId": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null && (!data.exists() || data.child('scorekeeperUid').val() === auth.uid || newData.child('scorekeeperUid').val() === auth.uid)",
+          "scorekeeperUid": {
+            ".validate": "newData.isString() && newData.val() === auth.uid && (!data.exists() || data.val() === auth.uid)"
+          },
+          "teamA":          { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "teamB":          { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "matchTitle":     { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "syncTimestamp":  { ".validate": "newData.isNumber() || newData.val() === null" },
+          "currentSet":     { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99" },
+          "setsA":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "setsB":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "pointsA":        { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+          "pointsB":        { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+          "matchStarted":   { ".validate": "newData.isBoolean()" },
+          "matchOver":      { ".validate": "newData.isBoolean()" },
+          "extraSetMode":   { ".validate": "newData.isBoolean()" },
+          "setNumberOffset":{ ".validate": "newData.isNumber()" },
+          "createdAt":      { ".validate": "newData.isNumber() || newData.val() === null" },
+          "appVersion":     { ".validate": "newData.isString()" },
+          "$other":         { ".validate": false }
+        },
+        "points": {
+          ".write": "auth != null && root.child('matches').child($matchId).child('meta/scorekeeperUid').val() === auth.uid",
+          "$pushId": {
+            ".validate": "newData.hasChildren(['team', 'pointsA', 'pointsB', 'setNum', 'timestamp'])"
+          }
+        },
+        "parentHighlights": {
+          "$pushId": {
+            ".write": "auth != null && (!data.exists() || root.child('matches').child($matchId).child('meta/scorekeeperUid').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['clientTimestamp']) && (!newData.child('note').exists() || (newData.child('note').isString() && newData.child('note').val().length <= 140)) && (!newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 40))",
+            "deleted": {
+              ".write": "auth != null && root.child('matches').child($matchId).child('meta/scorekeeperUid').val() === auth.uid",
+              ".validate": "newData.isBoolean()"
+            }
+          }
+        }
+      }
+    }
+  }
+}
