@@ -2281,13 +2281,29 @@ function SpectatorView(props) {
   const state = props.state;
   const [name, setName] = useState(state.parentName || "");
   const [note, setNote] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+
+  var disabledReason = props.liveError ? props.liveError : (state.matchOver ? "Match ended — highlights are closed." : null);
 
   function submit() {
     var trimmed = (note || "").trim();
     if (!trimmed) return;
+    if (state.matchOver) return;
     props.onSubmitHighlight(name, trimmed);
     setNote("");
+    setModalOpen(false);
   }
+
+  function openModal() {
+    if (disabledReason) return;
+    setNote("");
+    setModalOpen(true);
+  }
+
+  // Auto-close the modal if the scorekeeper ends the match while it's open.
+  useEffect(function() {
+    if (state.matchOver && modalOpen) setModalOpen(false);
+  }, [state.matchOver, modalOpen]);
 
   // Keep local name in sync when state.parentName changes (e.g. after first submit).
   useEffect(function() { setName(state.parentName || ""); }, [state.parentName]);
@@ -2329,27 +2345,6 @@ function SpectatorView(props) {
       </div>
 
       <div className="parent-form">
-        <div>
-          <label>Your name (optional)</label>
-          <input
-            type="text"
-            value={name}
-            onChange={function(e) { setName(e.target.value.slice(0, 40)); }}
-            placeholder="e.g. Mike"
-            maxLength={40}
-          />
-        </div>
-        <div>
-          <label>Highlight note</label>
-          <textarea
-            value={note}
-            onChange={function(e) { setNote(e.target.value.slice(0, PARENT_HIGHLIGHT_MAX_LEN)); }}
-            placeholder="Big dig by #7"
-            rows={2}
-            maxLength={PARENT_HIGHLIGHT_MAX_LEN}
-          />
-          <div className="char-count">{note.length}/{PARENT_HIGHLIGHT_MAX_LEN}</div>
-        </div>
         {props.parentSubmitStatus && (
           <div className={"parent-status " + (props.parentSubmitStatus.isError ? "err" : "ok")}>
             {props.parentSubmitStatus.msg}
@@ -2357,12 +2352,65 @@ function SpectatorView(props) {
         )}
         <button
           className="btn btn-primary"
-          disabled={!note.trim() || state.matchOver || !!props.liveError}
-          onClick={submit}
+          disabled={!!disabledReason}
+          onClick={openModal}
         >
           ★ Mark highlight
         </button>
+        {state.matchOver && !props.liveError && (
+          <div className="share-hint" style={{ marginTop: 4 }}>Match ended. Highlights will reopen if the scorekeeper continues the match.</div>
+        )}
       </div>
+
+      {modalOpen && (
+        <div className="share-overlay" onClick={function() { setModalOpen(false); }}>
+          <div className="share-dialog" onClick={function(e) { e.stopPropagation(); }}>
+            <div className="share-title">Mark highlight</div>
+            <div className="share-hint" style={{ marginBottom: 8 }}>Tag a great moment so it shows up in the final video.</div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 8 }}>Your name (optional)</label>
+              <input
+                type="text"
+                value={name}
+                onChange={function(e) { setName(e.target.value.slice(0, 40)); }}
+                placeholder="e.g. Mike"
+                maxLength={40}
+                style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 6, border: "1px solid var(--surface2)", background: "var(--surface2)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 12 }}>Highlight note</label>
+              <textarea
+                value={note}
+                onChange={function(e) { setNote(e.target.value.slice(0, PARENT_HIGHLIGHT_MAX_LEN)); }}
+                onKeyDown={function(e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
+                placeholder="Big dig by #7"
+                rows={3}
+                maxLength={PARENT_HIGHLIGHT_MAX_LEN}
+                autoFocus
+                style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 6, border: "1px solid var(--surface2)", background: "var(--surface2)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 13, resize: "vertical" }}
+              />
+              <div className="char-count" style={{ textAlign: "right", fontSize: 10, color: "var(--text-dim)" }}>{note.length}/{PARENT_HIGHLIGHT_MAX_LEN}</div>
+            </div>
+            {props.parentSubmitStatus && (
+              <div className={"parent-status " + (props.parentSubmitStatus.isError ? "err" : "ok")} style={{ marginTop: 8 }}>
+                {props.parentSubmitStatus.msg}
+              </div>
+            )}
+            <div className="share-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={function() { setModalOpen(false); }}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!note.trim() || state.matchOver}
+                onClick={submit}
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {sortedHighlights.length > 0 && (
         <div className="parent-list">
@@ -3319,7 +3367,11 @@ function VolleyballTracker() {
             </button>
             {state.pointLog.length > 0 && <span className="autosave-badge">auto-saved</span>}
             {state.extraSetMode
-              ? <button className="btn btn-danger" onClick={function() { setState(function(s) { return { ...s, matchOver: true, extraSetMode: false }; }); }}>End Match</button>
+              ? <button className="btn btn-danger" onClick={function() { setState(function(s) {
+                  var next = { ...s, matchOver: true, extraSetMode: false };
+                  mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: true, extraSetMode: false }); });
+                  return next;
+                }); }}>End Match</button>
               : <button className="btn btn-danger" onClick={function() { setConfirmAction("end"); }}>End Match</button>
             }
           </div>
@@ -3425,7 +3477,9 @@ function VolleyballTracker() {
           {/* Continue match button */}
           <button className="btn btn-secondary" onClick={function() {
             setState(function(s) {
-              return { ...s, matchOver: false, currentSet: s.currentSet + 1, pointsA: 0, pointsB: 0, extraSetMode: true };
+              var next = { ...s, matchOver: false, currentSet: s.currentSet + 1, pointsA: 0, pointsB: 0, extraSetMode: true };
+              mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: false, currentSet: next.currentSet, pointsA: 0, pointsB: 0, extraSetMode: true }); });
+              return next;
             });
           }}>Continue match (+1 set)</button>
 
@@ -3579,7 +3633,11 @@ function VolleyballTracker() {
               <button className="btn btn-danger" onClick={function() {
                 if (confirmAction === "end") {
                   trackEvent('Match', 'EndEarly');
-                  setState(function(s) { return { ...s, matchOver: true, setHistory: s.setHistory.concat([{ winnerA: s.pointsA > s.pointsB, scoreA: s.pointsA, scoreB: s.pointsB }]) }; });
+                  setState(function(s) {
+                    var next = { ...s, matchOver: true, setHistory: s.setHistory.concat([{ winnerA: s.pointsA > s.pointsB, scoreA: s.pointsA, scoreB: s.pointsB }]) };
+                    mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: true }); });
+                    return next;
+                  });
                 } else { resetMatch(); }
                 setConfirmAction(null);
               }}>{confirmAction === "end" ? "End Match" : "Reset"}</button>
