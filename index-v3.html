@@ -237,14 +237,15 @@ var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
 var APP_VERSION = "3.0.0-beta";
 
 // --- Live Share (Firebase RTDB) ---
-// Replace these placeholders with your Firebase project's web config.
-// When databaseURL is left empty the app stays in solo mode and Share UI is hidden.
+// Web client config for the scorelayer-volley Firebase project. The apiKey is
+// a public client identifier (not a secret); RTDB security comes from
+// Anonymous Auth + the rules in firebase-rules.json.
 var FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",
-  projectId: "",
-  appId: ""
+  apiKey: "AIzaSyB0SYWxu2U1EkYH-0c0HSn-gEOTq0IJb9Q",
+  authDomain: "scorelayer-volley.firebaseapp.com",
+  databaseURL: "https://scorelayer-volley-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "scorelayer-volley",
+  appId: "1:982848321994:web:657eb7ecc7a9c353b53733"
 };
 var PARENT_HIGHLIGHT_MAX_LEN = 140;
 var PARENT_HIGHLIGHT_THROTTLE_MS = 15000;
