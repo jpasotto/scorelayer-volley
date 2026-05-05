@@ -227,6 +227,7 @@ import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer
 window.Mp4Muxer = { Muxer, ArrayBufferTarget };
 </script>
 <script>
+// EXPORTERS_BEGIN — sliced by tests/harness.mjs; do not remove
 // --- Constants ---
 var POINTS_TO_WIN_SET = 25;
 var POINTS_TO_WIN_TIEBREAK = 15;
@@ -812,6 +813,7 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberO
   }
   return lines.join("\n");
 }
+// EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
 // --- Chroma Key shell script + Python frame renderer ---
 // Info row rendered in Python: title at x=80 (left), Set N centered, Sets A:B at x=WIDTH-80 (right)
