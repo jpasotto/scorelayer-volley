@@ -19,7 +19,7 @@ Tier-1 unit tests guard the export pipeline (YouTube chapters, CSV, SRT, FCPXML,
 node --test tests/*.test.mjs
 ```
 
-The harness (`tests/harness.mjs`) reads `index-v3.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
+The harness (`tests/harness.mjs`) reads `index.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
 
 Fixtures live under `tests/fixtures/`. CI runs the suite on every PR via `.github/workflows/test.yml`.
 
@@ -53,16 +53,16 @@ The entire application is a **single `index.html` file** with no build toolchain
 
 **Sync mechanism:** The "Sync" button records `Date.now()` as `syncTimestamp`. All export timestamps are computed as `pointLog[i].timestamp - syncTimestamp`, so exports are relative to whenever the user pressed Sync (typically at video recording start or first serve).
 
-## Live Share (v3.0, in `index-v3.html`)
+## Live Share
 
-A second top-level file, `index-v3.html`, adds an optional Live Share mode on top of the v2.9.4 baseline. The original `index.html` is the production build and is intentionally left untouched until the v3 cutover. Both files share the same origin and `localStorage` (autosave key `scorelayer_match_autosave`); v3's new state fields are additive so v2.9.4 ignores them when reading the cache.
+Live Share is built into `index.html`. With Firebase configured, a scorekeeper can publish a match to a Firebase Realtime Database; spectators load the same page via `?m={matchId}` and see scoreboard updates in real time, plus submit parent highlights from the bleachers.
 
-**Roles** (new `state.role`):
-- `solo` — default, identical to v2.9.4 behaviour, no network writes.
+**Roles** (`state.role`):
+- `solo` — default, no network writes.
 - `scorekeeper` — created by clicking **Share live** in the MATCH header; writes to RTDB.
 - `spectator` — entered automatically when the URL contains `?m={matchId}`; read-only scoreboard plus a parent-highlight submission form.
 
-**Backend:** Firebase Realtime Database, anonymous auth, Spark free tier. Configure once by editing `FIREBASE_CONFIG` near the top of `index-v3.html` with your project's web config. With an empty `databaseURL` the Share UI auto-hides and v3 behaves identically to solo.
+**Backend:** Firebase Realtime Database, anonymous auth, Spark free tier. Configure once by editing `FIREBASE_CONFIG` near the top of `index.html` with your project's web config. With an empty `databaseURL` the Share UI auto-hides and the app behaves identically to solo.
 
 **RTDB tree** (`/matches/{matchId}`):
 - `meta/` — scorekeeper-only writes; teamA, teamB, syncTimestamp, scoreboard mirror, `scorekeeperUid`.
@@ -71,8 +71,8 @@ A second top-level file, `index-v3.html`, adds an optional Live Share mode on to
 
 **Security rules:** see `firebase-rules.json`. Paste into the Firebase console under Realtime Database ▸ Rules. They restrict `meta/` and `points/` writes to the scorekeeper UID, cap parent notes at 140 chars and names at 40 chars, and only allow the scorekeeper to set `deleted`.
 
-**Spectator URL:** `https://<host>/scorelayer-volley/index-v3.html?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
+**Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 
 **Parent highlights in exports:** YouTube chapters, CSV, and Highlights SRT all merge accepted (non-deleted) parent submissions in addition to the scorekeeper's `★` highlights. Parent timestamps come from the submitting client's `Date.now()` at button-press, so they align with the same `syncTimestamp` the scorekeeper used.
 
-**Cutover plan:** when v3 is ready to replace v2.9.4, tag the commit (`git tag v2.9.4`), then `git mv index-v3.html index.html`. The PWA `manifest.json` `start_url` already points at `/`, so it picks up the new build on next launch with no config change. Document the cutover in `MEMORY_v3.0.md`.
+**Beta-era share links:** `index-v3.html` exists at the repo root as a thin client-side redirect to `index.html` (preserving any `?m=` query string), so QR codes and links generated during the v3.0 beta keep working.

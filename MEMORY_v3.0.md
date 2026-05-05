@@ -161,3 +161,24 @@ Append the cutover commit hash and date to this file when it happens.
   the database fills up the Spark free tier handles a season's worth of data.
 - Consider exposing a "stop sharing" toast that explains spectators will see
   the match as ended.
+
+---
+
+## Cutover log
+
+- **Date:** 2026-05-05
+- **Tag:** `v2.9.4` — created locally at the last commit containing the
+  unmodified v2.9.4 `index.html` (parent of the cutover branch). Push manually
+  with `git push origin v2.9.4` after merge — the proxy environment used to
+  prepare this branch refused tag pushes (HTTP 403).
+- **Cutover branch:** `chore/v3-cutover`
+- **Structure:** two commits to make the rename clean —
+  1. `chore: delete v2.9.4 index.html (v3 cutover step 1/2)`
+  2. `chore: promote index-v3.html to index.html (v3 cutover step 2/2)` —
+     pure 100% rename, so `git log --follow index.html` traces v3 dev
+     history through this commit.
+  followed by a third commit with the new redirect `index-v3.html`, the
+  `tests/harness.mjs` retarget, and the doc updates (this file + `CLAUDE.md`).
+- **Closes:** issue #30. Tier-1 export tests (issue #29 / PR #31) are the
+  pre-merge regression gate; CI runs `node --test tests/*.test.mjs` against
+  the new `index.html` on every PR.
