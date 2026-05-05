@@ -28,6 +28,10 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Firebase (compat) for Live Share. Loaded eagerly; sync helpers no-op when config missing. -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <style>
 html, body { margin: 0; padding: 0; background: #0a0e14; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -173,6 +177,47 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
 .log-entry .log-highlight { color: var(--warning); min-width: 16px; font-size: 14px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .log-entry .log-hl-note { color: var(--warning); font-size: 10px; font-style: italic; }
 .highlight-section-label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--warning); text-align: center; margin-bottom: 8px; }
+  /* --- v3 Live Share --- */
+  .share-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 220; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .share-dialog { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 360px; width: 100%; border: 1px solid var(--surface2); box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
+  .share-title { font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; text-align: center; }
+  .share-url-row { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 12px; }
+  .share-url-row input { flex: 1; background: var(--surface2); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+  .share-qr { display: flex; justify-content: center; padding: 12px; background: #fff; border-radius: 8px; margin: 8px auto; max-width: 220px; }
+  .share-qr img { width: 100%; height: auto; display: block; }
+  .share-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .share-hint { font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.5; margin-top: 4px; }
+  .spectator-screen { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+  .spectator-banner { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--success); }
+  .spectator-banner .live-dot-bg { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; }
+  .spectator-scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; padding: 16px; background: var(--surface); border-radius: 12px; }
+  .spectator-team { text-align: center; }
+  .spectator-team-name { font-size: 14px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+  .spectator-team.a .spectator-team-name { color: var(--team-a); }
+  .spectator-team.b .spectator-team-name { color: var(--team-b); }
+  .spectator-points { font-size: 64px; font-weight: 700; line-height: 1; }
+  .spectator-team.a .spectator-points { color: var(--team-a); }
+  .spectator-team.b .spectator-points { color: var(--team-b); }
+  .spectator-sets { font-size: 14px; color: var(--text-dim); margin-top: 4px; font-family: var(--font-mono); }
+  .spectator-sep { font-size: 32px; color: var(--text-dim); align-self: center; }
+  .spectator-set-label { text-align: center; font-size: 11px; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
+  .parent-form { background: var(--surface); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .parent-form label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+  .parent-form input, .parent-form textarea { background: var(--surface2); border: 1px solid var(--surface2); border-radius: 6px; padding: 10px; font-family: var(--font-display); font-size: 14px; color: var(--text); outline: none; resize: none; }
+  .parent-form input:focus, .parent-form textarea:focus { border-color: var(--accent); }
+  .parent-form .char-count { font-size: 10px; color: var(--text-dim); text-align: right; font-family: var(--font-mono); }
+  .parent-status { font-size: 12px; text-align: center; padding: 6px; border-radius: 4px; }
+  .parent-status.ok { background: rgba(34,197,94,0.1); color: var(--success); }
+  .parent-status.err { background: rgba(239,68,68,0.1); color: var(--team-b); }
+  .parent-list { background: var(--surface); border-radius: 10px; padding: 12px; max-height: 280px; overflow-y: auto; }
+  .parent-list-title { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+  .parent-entry { padding: 8px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
+  .parent-entry:last-child { border-bottom: none; }
+  .parent-entry-meta { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); margin-bottom: 2px; }
+  .parent-entry-name { color: var(--accent); font-weight: 600; }
+  .parent-entry-note { color: var(--text); }
+  .parent-entry-deleted { color: var(--text-dim); text-decoration: line-through; }
+  .parent-entry-delete-btn { background: transparent; border: none; color: var(--team-b); font-size: 10px; cursor: pointer; padding: 0 4px; letter-spacing: 1px; }
 </style>
 </head>
 <body>
@@ -182,13 +227,81 @@ import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer
 window.Mp4Muxer = { Muxer, ArrayBufferTarget };
 </script>
 <script>
+// EXPORTERS_BEGIN — sliced by tests/harness.mjs; do not remove
 // --- Constants ---
 var POINTS_TO_WIN_SET = 25;
 var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
-var APP_VERSION = "2.9.4";
+var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
+var APP_VERSION = "3.0.0-beta";
+
+// --- Live Share (Firebase RTDB) ---
+// Web client config for the scorelayer-volley Firebase project. The apiKey is
+// a public client identifier (not a secret); RTDB security comes from
+// Anonymous Auth + the rules in firebase-rules.json.
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB0SYWxu2U1EkYH-0c0HSn-gEOTq0IJb9Q",
+  authDomain: "scorelayer-volley.firebaseapp.com",
+  databaseURL: "https://scorelayer-volley-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "scorelayer-volley",
+  appId: "1:982848321994:web:657eb7ecc7a9c353b53733"
+};
+var PARENT_HIGHLIGHT_MAX_LEN = 140;
+var PARENT_HIGHLIGHT_THROTTLE_MS = 15000;
+var FIREBASE_READY = false;
+var firebaseAuthPromise = null;
+var firebaseLastError = null;
+
+function isFirebaseConfigured() {
+  return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+}
+
+function describeFirebaseError(err) {
+  if (!err) return null;
+  var code = err.code || "";
+  if (code === "auth/admin-restricted-operation" || code === "auth/operation-not-allowed") {
+    return "Anonymous sign-in is disabled. In the Firebase Console open Authentication ▸ Sign-in method and enable Anonymous, then try again.";
+  }
+  if (code === "PERMISSION_DENIED" || code === "permission-denied") {
+    return "Database write rejected. Paste firebase-rules.json into Realtime Database ▸ Rules and click Publish, then try again.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "Network error reaching Firebase. Check your connection and try again.";
+  }
+  if (code) return "Firebase error: " + code;
+  return err.message ? "Firebase error: " + err.message : "Firebase error.";
+}
+
+function initFirebase() {
+  if (firebaseAuthPromise) return firebaseAuthPromise;
+  if (!isFirebaseConfigured() || typeof firebase === "undefined") {
+    firebaseAuthPromise = Promise.resolve(null);
+    return firebaseAuthPromise;
+  }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseAuthPromise = firebase.auth().signInAnonymously().then(function(cred) {
+      FIREBASE_READY = true;
+      firebaseLastError = null;
+      return cred && cred.user ? cred.user.uid : null;
+    }).catch(function(err) {
+      console.warn("Firebase anonymous sign-in failed:", err);
+      FIREBASE_READY = false;
+      firebaseLastError = err;
+      // Don't cache the failed promise — let the user retry after fixing config.
+      firebaseAuthPromise = null;
+      return null;
+    });
+  } catch (err) {
+    console.warn("Firebase init failed:", err);
+    firebaseLastError = err;
+    firebaseAuthPromise = null;
+    return Promise.resolve(null);
+  }
+  return firebaseAuthPromise;
+}
 
 var HIGHLIGHT_PILL_MS = 8000;
 var HIGHLIGHT_PILL_EXTEND_MS = 8000;
@@ -279,10 +392,16 @@ function createInitialState() {
     currentSet: 1,
     extraSetMode: false,
     setNumberOffset: 0,
+    // v3 Live Share (additive; v2.9.4 ignores these)
+    role: "solo",          // "solo" | "scorekeeper" | "spectator"
+    isShared: false,
+    matchId: null,
+    parentName: "",
+    parentHighlights: [],
   };
 }
 
-var SCREEN = { SETUP: "setup", MATCH: "match", CSV_IMPORT: "csv_import" };
+var SCREEN = { SETUP: "setup", MATCH: "match", CSV_IMPORT: "csv_import", SPECTATOR: "spectator" };
 
 // --- LocalStorage autosave ---
 function autosaveState(state) {
@@ -296,6 +415,9 @@ function autosaveState(state) {
       syncTimestamp: state.syncTimestamp, currentSet: state.currentSet,
       extraSetMode: state.extraSetMode || false,
       setNumberOffset: state.setNumberOffset || 0,
+      // v3: matchId persists so a scorekeeper resuming after refresh can re-join their share.
+      // role/isShared are derived at load time (URL or explicit user action), not from cache.
+      matchId: state.matchId || null,
       savedAt: Date.now()
     }));
   } catch (e) { /* localStorage full or unavailable */ }
@@ -352,7 +474,7 @@ function generateSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
   return lines.join("\n");
 }
 
-function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
+function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle, parentHighlights) {
   var header = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay";
   var rows = pointLog.map(function(p, i) {
     var offset = syncTimestamp ? p.timestamp - syncTimestamp : "";
@@ -360,6 +482,18 @@ function generateCSV(pointLog, syncTimestamp, teamA, teamB, matchTitle) {
     var displayPrefix = p.highlight ? "\u2605 " : "";
     return [i + 1, formatClockTime(p.wallClock), offset, p.setNum, p.pointsA, p.pointsB, p.setsA || 0, p.setsB || 0, p.team === "A" ? teamA : teamB, p.correction ? "Y" : "N", p.highlight ? "Y" : "N", '"' + ((p.highlightNote || "").replace(/"/g, '""')) + '"', '"' + title + '"', '"' + displayPrefix + teamA + " " + p.pointsA + "-" + p.pointsB + " " + teamB + '"'].join(",");
   });
+  // Append parent-submitted highlights (Live Share). They share the same column
+  // schema; ScoringTeam=PARENT marks them, Highlight=Y, HighlightNote carries the message.
+  var startIdx = pointLog.length + 1;
+  if (parentHighlights && parentHighlights.length) {
+    var t2 = (matchTitle || "").replace(/"/g, '""');
+    parentHighlights.forEach(function(p, k) {
+      if (!p || p.deleted) return;
+      var offset = syncTimestamp ? p.clientTimestamp - syncTimestamp : "";
+      var noteWithName = (p.name ? p.name + ": " : "") + (p.note || "");
+      rows.push([startIdx + k, formatClockTime(p.clientTimestamp), offset, "", "", "", "", "", "PARENT", "N", "Y", '"' + noteWithName.replace(/"/g, '""') + '"', '"' + t2 + '"', '"\u2b50 ' + (p.name || "Anon") + '"'].join(","));
+    });
+  }
   return [header].concat(rows).join("\n");
 }
 
@@ -513,7 +647,7 @@ function msToChapterTime(ms) {
     : m + ":" + String(s).padStart(2, "0");
 }
 
-function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
+function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset, parentHighlights) {
   if (syncTimestamp == null) return [];
   var chapters = [];
 
@@ -565,14 +699,31 @@ function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumbe
     chapters.push({ timeMs: effectiveMs, text: hlText });
   }
 
+  // Add parent-submitted highlights (Live Share). Bumps colliding timestamps
+  // by 1s so YouTube's strictly-ascending rule still holds.
+  if (parentHighlights && parentHighlights.length) {
+    var seenMs = {};
+    chapters.forEach(function(c) { seenMs[c.timeMs] = true; });
+    for (var pi = 0; pi < parentHighlights.length; pi++) {
+      var pp = parentHighlights[pi];
+      if (!pp || pp.deleted) continue;
+      var pms = pp.clientTimestamp - syncTimestamp;
+      if (pms < 0) continue;
+      while (seenMs[pms]) pms += 1000;
+      seenMs[pms] = true;
+      var ptxt = "\u2b50 " + (pp.name ? pp.name + ": " : "") + (pp.note || "highlight");
+      chapters.push({ timeMs: pms, text: ptxt });
+    }
+  }
+
   // Sort chronologically
   chapters.sort(function(a, b) { return a.timeMs - b.timeMs; });
 
   return chapters;
 }
 
-function generateYouTubeChapters(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
-  var chapters = buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset);
+function generateYouTubeChapters(pointLog, syncTimestamp, teamA, teamB, setNumberOffset, parentHighlights) {
+  var chapters = buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumberOffset, parentHighlights);
   if (chapters.length === 0) return "";
   return chapters.map(function(c) {
     return msToChapterTime(c.timeMs) + " " + c.text;
@@ -615,10 +766,11 @@ function validateYouTubeChapters(chapters) {
 }
 
 // --- Highlights-only SRT export ---
-function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset) {
+function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberOffset, parentHighlights) {
   if (syncTimestamp == null || pointLog.length === 0) return "";
-  var lines = [];
-  var idx = 1;
+  // Build a unified list of (startMs, endMs, text) entries from scorekeeper highlights
+  // and parent highlights, then sort and emit as a single SRT.
+  var entries = [];
   for (var i = 0; i < pointLog.length; i++) {
     var p = pointLog[i];
     if (!p.highlight) continue;
@@ -638,14 +790,30 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberO
     if (endMs <= startMs) continue;
     var text = "\u2605 " + formatSetLabel(p.setNum, setNumberOffset) + " | " + teamA + " " + p.pointsA + " - " + p.pointsB + " " + teamB;
     if (p.highlightNote) text += " [" + p.highlightNote + "]";
-    lines.push(String(idx));
-    lines.push(formatSRTTime(startMs) + " --> " + formatSRTTime(endMs));
-    lines.push(text);
+    entries.push({ startMs: startMs, endMs: endMs, text: text });
+  }
+  // Parent highlights: 8s default subtitle window from clientTimestamp.
+  if (parentHighlights && parentHighlights.length) {
+    parentHighlights.forEach(function(pp) {
+      if (!pp || pp.deleted) return;
+      var s = pp.clientTimestamp - syncTimestamp;
+      if (s < 0) return;
+      var ptxt = "\u2b50 " + (pp.name ? pp.name + ": " : "") + (pp.note || "highlight");
+      entries.push({ startMs: s, endMs: s + 8000, text: ptxt });
+    });
+  }
+  entries.sort(function(a, b) { return a.startMs - b.startMs; });
+  var lines = [];
+  for (var idx = 0; idx < entries.length; idx++) {
+    var e = entries[idx];
+    lines.push(String(idx + 1));
+    lines.push(formatSRTTime(e.startMs) + " --> " + formatSRTTime(e.endMs));
+    lines.push(e.text);
     lines.push("");
-    idx++;
   }
   return lines.join("\n");
 }
+// EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
 // --- Chroma Key shell script + Python frame renderer ---
 // Info row rendered in Python: title at x=80 (left), Set N centered, Sets A:B at x=WIDTH-80 (right)
@@ -1940,9 +2108,397 @@ function buildZip(files) {
   return result;
 }
 
+// --- Live Share sync helpers (no React; safe to call from anywhere). ---
+// Every call returns a Promise and never throws synchronously. When Firebase
+// is unconfigured or the user is offline these resolve to null/false so solo
+// mode keeps working. All scorekeeper writes go through atomic multi-path
+// updates so partial corruption isn't possible.
+var sync = (function() {
+  function dbRef(path) { return firebase.database().ref(path); }
+
+  function buildMetaPatch(state) {
+    return {
+      teamA: state.teamA,
+      teamB: state.teamB,
+      matchTitle: state.matchTitle || "",
+      setNumberOffset: state.setNumberOffset || 0,
+      syncTimestamp: state.syncTimestamp || null,
+      currentSet: state.currentSet,
+      setsA: state.setsA,
+      setsB: state.setsB,
+      pointsA: state.pointsA,
+      pointsB: state.pointsB,
+      matchStarted: !!state.matchStarted,
+      matchOver: !!state.matchOver,
+      extraSetMode: !!state.extraSetMode,
+    };
+  }
+
+  function createMatch(state) {
+    if (!FIREBASE_READY) return Promise.resolve(null);
+    var uid = firebase.auth().currentUser && firebase.auth().currentUser.uid;
+    if (!uid) return Promise.resolve(null);
+    var newRef = dbRef("matches").push();
+    var matchId = newRef.key;
+    var meta = buildMetaPatch(state);
+    meta.scorekeeperUid = uid;
+    meta.createdAt = firebase.database.ServerValue.TIMESTAMP;
+    meta.appVersion = APP_VERSION;
+    var update = {};
+    update["matches/" + matchId + "/meta"] = meta;
+    // Backfill any points already scored before Share was pressed.
+    (state.pointLog || []).forEach(function(p) {
+      var pRef = dbRef("matches/" + matchId + "/points").push();
+      update["matches/" + matchId + "/points/" + pRef.key] = p;
+    });
+    return firebase.database().ref().update(update).then(function() {
+      return matchId;
+    }).catch(function(err) {
+      console.warn("sync.createMatch failed:", err);
+      firebaseLastError = err;
+      return null;
+    });
+  }
+
+  function pushPoint(matchId, pointEntry, metaPatch) {
+    if (!FIREBASE_READY || !matchId) return Promise.resolve(false);
+    var pRef = dbRef("matches/" + matchId + "/points").push();
+    var update = {};
+    update["matches/" + matchId + "/points/" + pRef.key] = pointEntry;
+    if (metaPatch) {
+      Object.keys(metaPatch).forEach(function(k) {
+        update["matches/" + matchId + "/meta/" + k] = metaPatch[k];
+      });
+    }
+    return firebase.database().ref().update(update).then(function() { return true; })
+      .catch(function(err) { console.warn("sync.pushPoint failed:", err); return false; });
+  }
+
+  function replacePointLog(matchId, pointLog, metaPatch) {
+    // Used by undo: we rewrite the entire points list (not append) because
+    // undo recomputes the derived state. Server history is preserved via
+    // correction:true entries written by reducePoint, so undo is rare.
+    if (!FIREBASE_READY || !matchId) return Promise.resolve(false);
+    var update = {};
+    var pointsObj = {};
+    (pointLog || []).forEach(function(p, i) {
+      // Use a stable key derived from the index so repeated replaces don't
+      // create dangling listeners on the spectator side.
+      pointsObj["p" + String(i).padStart(6, "0")] = p;
+    });
+    update["matches/" + matchId + "/points"] = pointsObj;
+    if (metaPatch) {
+      Object.keys(metaPatch).forEach(function(k) {
+        update["matches/" + matchId + "/meta/" + k] = metaPatch[k];
+      });
+    }
+    return firebase.database().ref().update(update).then(function() { return true; })
+      .catch(function(err) { console.warn("sync.replacePointLog failed:", err); return false; });
+  }
+
+  function updateMeta(matchId, patch) {
+    if (!FIREBASE_READY || !matchId || !patch) return Promise.resolve(false);
+    var update = {};
+    Object.keys(patch).forEach(function(k) {
+      update["matches/" + matchId + "/meta/" + k] = patch[k];
+    });
+    return firebase.database().ref().update(update).then(function() { return true; })
+      .catch(function(err) { console.warn("sync.updateMeta failed:", err); return false; });
+  }
+
+  function subscribeMatch(matchId, onUpdate, onError) {
+    if (!FIREBASE_READY || !matchId) return function() {};
+    var ref = dbRef("matches/" + matchId);
+    var handler = ref.on("value", function(snap) {
+      var v = snap.val();
+      if (!v) { onUpdate(null); return; }
+      var meta = v.meta || {};
+      var pointsObj = v.points || {};
+      var pointLog = Object.keys(pointsObj).sort().map(function(k) { return pointsObj[k]; });
+      var phObj = v.parentHighlights || {};
+      var parentHighlights = Object.keys(phObj).map(function(k) {
+        var x = phObj[k]; x.id = k; return x;
+      });
+      onUpdate({ meta: meta, pointLog: pointLog, parentHighlights: parentHighlights });
+    }, function(err) {
+      console.warn("sync.subscribeMatch error:", err);
+      if (onError) onError(err);
+    });
+    return function unsubscribe() { ref.off("value", handler); };
+  }
+
+  function submitParentHighlight(matchId, name, note) {
+    if (!FIREBASE_READY || !matchId) return Promise.resolve(null);
+    var trimmedNote = (note || "").trim().slice(0, PARENT_HIGHLIGHT_MAX_LEN);
+    var trimmedName = (name || "").trim().slice(0, 40);
+    var entry = {
+      name: trimmedName || null,
+      note: trimmedNote || null,
+      clientTimestamp: Date.now(),
+      serverTimestamp: firebase.database.ServerValue.TIMESTAMP,
+      deleted: false,
+    };
+    var ref = dbRef("matches/" + matchId + "/parentHighlights").push();
+    return ref.set(entry).then(function() { return ref.key; })
+      .catch(function(err) { console.warn("sync.submitParentHighlight failed:", err); return null; });
+  }
+
+  function deleteParentHighlight(matchId, highlightId) {
+    if (!FIREBASE_READY || !matchId || !highlightId) return Promise.resolve(false);
+    return dbRef("matches/" + matchId + "/parentHighlights/" + highlightId + "/deleted").set(true)
+      .then(function() { return true; })
+      .catch(function(err) { console.warn("sync.deleteParentHighlight failed:", err); return false; });
+  }
+
+  function shareUrl(matchId) {
+    var u = new URL(window.location.href);
+    u.search = "?m=" + encodeURIComponent(matchId);
+    u.hash = "";
+    return u.toString();
+  }
+
+  function qrUrl(text) {
+    return "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(text);
+  }
+
+  return {
+    createMatch: createMatch,
+    pushPoint: pushPoint,
+    replacePointLog: replacePointLog,
+    updateMeta: updateMeta,
+    subscribeMatch: subscribeMatch,
+    submitParentHighlight: submitParentHighlight,
+    deleteParentHighlight: deleteParentHighlight,
+    shareUrl: shareUrl,
+    qrUrl: qrUrl,
+    buildMetaPatch: buildMetaPatch,
+  };
+})();
+
 </script>
 <script type="text/babel">
-const { useState, useRef, useCallback, useEffect } = React;
+const { useState, useRef, useCallback, useEffect, useMemo } = React;
+
+function SpectatorView(props) {
+  const state = props.state;
+  const [name, setName] = useState(state.parentName || "");
+  const [note, setNote] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+
+  var disabledReason = props.liveError ? props.liveError : (state.matchOver ? "Match ended — highlights are closed." : null);
+
+  function submit() {
+    var trimmed = (note || "").trim();
+    if (!trimmed) return;
+    if (state.matchOver) return;
+    props.onSubmitHighlight(name, trimmed);
+    setNote("");
+    setModalOpen(false);
+  }
+
+  function openModal() {
+    if (disabledReason) return;
+    setNote("");
+    setModalOpen(true);
+  }
+
+  // Auto-close the modal if the scorekeeper ends the match while it's open.
+  useEffect(function() {
+    if (state.matchOver && modalOpen) setModalOpen(false);
+  }, [state.matchOver, modalOpen]);
+
+  // Keep local name in sync when state.parentName changes (e.g. after first submit).
+  useEffect(function() { setName(state.parentName || ""); }, [state.parentName]);
+
+  var sortedHighlights = (state.parentHighlights || [])
+    .slice()
+    .filter(function(h) { return !h.deleted; })
+    .sort(function(a, b) { return (b.clientTimestamp || 0) - (a.clientTimestamp || 0); });
+
+  var setLabel = formatSetLabel(state.currentSet, state.setNumberOffset || 0);
+  var connected = state.matchStarted || state.pointLog.length > 0;
+
+  return (
+    <div className="spectator-screen">
+      <div className="spectator-banner">
+        <div className="live-dot-bg"></div>
+        Live spectator view
+      </div>
+      {props.liveError && (
+        <div className="parent-status err">{props.liveError}</div>
+      )}
+
+      <div className="spectator-scoreboard">
+        <div className="spectator-team a">
+          <div className="spectator-team-name">{state.teamA || "Home"}</div>
+          <div className="spectator-points">{state.pointsA || 0}</div>
+          <div className="spectator-sets">Sets: {state.setsA || 0}</div>
+        </div>
+        <div className="spectator-sep">:</div>
+        <div className="spectator-team b">
+          <div className="spectator-team-name">{state.teamB || "Away"}</div>
+          <div className="spectator-points">{state.pointsB || 0}</div>
+          <div className="spectator-sets">Sets: {state.setsB || 0}</div>
+        </div>
+      </div>
+      <div className="spectator-set-label">
+        {connected ? setLabel : "Waiting for scorekeeper…"}
+        {state.matchOver && " · Match Over"}
+      </div>
+
+      <div className="parent-form">
+        {props.parentSubmitStatus && (
+          <div className={"parent-status " + (props.parentSubmitStatus.isError ? "err" : "ok")}>
+            {props.parentSubmitStatus.msg}
+          </div>
+        )}
+        <button
+          className="btn btn-primary"
+          disabled={!!disabledReason}
+          onClick={openModal}
+        >
+          ★ Mark highlight
+        </button>
+        {state.matchOver && !props.liveError && (
+          <div className="share-hint" style={{ marginTop: 4 }}>Match ended. Highlights will reopen if the scorekeeper continues the match.</div>
+        )}
+      </div>
+
+      {modalOpen && (
+        <div className="share-overlay" onClick={function() { setModalOpen(false); }}>
+          <div className="share-dialog" onClick={function(e) { e.stopPropagation(); }}>
+            <div className="share-title">Mark highlight</div>
+            <div className="share-hint" style={{ marginBottom: 8 }}>Tag a great moment so it shows up in the final video.</div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 8 }}>Your name (optional)</label>
+              <input
+                type="text"
+                value={name}
+                onChange={function(e) { setName(e.target.value.slice(0, 40)); }}
+                placeholder="e.g. Mike"
+                maxLength={40}
+                style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 6, border: "1px solid var(--surface2)", background: "var(--surface2)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 12 }}>Highlight note</label>
+              <textarea
+                value={note}
+                onChange={function(e) { setNote(e.target.value.slice(0, PARENT_HIGHLIGHT_MAX_LEN)); }}
+                onKeyDown={function(e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
+                placeholder="Big dig by #7"
+                rows={3}
+                maxLength={PARENT_HIGHLIGHT_MAX_LEN}
+                autoFocus
+                style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 6, border: "1px solid var(--surface2)", background: "var(--surface2)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 13, resize: "vertical" }}
+              />
+              <div className="char-count" style={{ textAlign: "right", fontSize: 10, color: "var(--text-dim)" }}>{note.length}/{PARENT_HIGHLIGHT_MAX_LEN}</div>
+            </div>
+            {props.parentSubmitStatus && (
+              <div className={"parent-status " + (props.parentSubmitStatus.isError ? "err" : "ok")} style={{ marginTop: 8 }}>
+                {props.parentSubmitStatus.msg}
+              </div>
+            )}
+            <div className="share-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={function() { setModalOpen(false); }}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!note.trim() || state.matchOver}
+                onClick={submit}
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sortedHighlights.length > 0 && (
+        <div className="parent-list">
+          <div className="parent-list-title">Submitted highlights</div>
+          {sortedHighlights.map(function(h) {
+            var offsetMs = state.syncTimestamp ? (h.clientTimestamp - state.syncTimestamp) : null;
+            var offsetTxt = (offsetMs != null && offsetMs >= 0) ? msToChapterTime(offsetMs) : formatClockTime(h.clientTimestamp);
+            return (
+              <div className="parent-entry" key={h.id}>
+                <div className="parent-entry-meta">{offsetTxt}</div>
+                <div>
+                  {h.name && <span className="parent-entry-name">{h.name}: </span>}
+                  <span className="parent-entry-note">{h.note}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ShareModalView(props) {
+  const state = props.state;
+  const [copyFeedback, setCopyFeedback] = useState("");
+  var url = state.matchId ? sync.shareUrl(state.matchId) : "";
+
+  function copyUrl() {
+    if (!url) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function() {
+        setCopyFeedback("Copied!");
+        setTimeout(function() { setCopyFeedback(""); }, 1800);
+      });
+    } else {
+      var input = document.getElementById("share-url-input");
+      if (input) { input.select(); document.execCommand("copy"); setCopyFeedback("Copied!"); setTimeout(function() { setCopyFeedback(""); }, 1800); }
+    }
+  }
+
+  return (
+    <div className="share-overlay" onClick={props.onClose}>
+      <div className="share-dialog" onClick={function(e) { e.stopPropagation(); }}>
+        <div className="share-title">Live Share</div>
+        {!state.isShared ? (
+          <>
+            <div className="share-hint">
+              Generate a link parents in the stands can open to follow the score and submit highlight notes. The video timestamps stay aligned with your sync.
+            </div>
+            {props.liveError && (
+              <div className="parent-status err" style={{ marginTop: 12 }}>{props.liveError}</div>
+            )}
+            <div className="share-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={props.sharePending} onClick={props.onClose}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={props.sharePending} onClick={function() { props.onStart(); }}>
+                {props.sharePending ? "Starting…" : "Start sharing"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="share-hint">Share this link or QR with the parents:</div>
+            <div className="share-url-row">
+              <input id="share-url-input" readOnly value={url} onFocus={function(e) { e.target.select(); }} />
+              <button className="btn btn-small" onClick={copyUrl}>Copy</button>
+            </div>
+            {copyFeedback && <div className="parent-status ok">{copyFeedback}</div>}
+            {url && (
+              <div className="share-qr">
+                <img alt="QR code" src={sync.qrUrl(url)} />
+              </div>
+            )}
+            <div className="share-hint">
+              Parent submissions appear in the live point log and become YouTube chapters in the export.
+            </div>
+            <div className="share-actions">
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={props.onClose}>Close</button>
+              <button className="btn btn-danger" style={{ flex: 1 }} onClick={props.onStop}>Stop sharing</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function VolleyballTracker() {
   const [screen, setScreen] = useState(SCREEN.SETUP);
@@ -1978,16 +2534,104 @@ function VolleyballTracker() {
   const [highlightPrompt, setHighlightPrompt] = useState(null);
   // Shape: { index: number, timer: timeoutId, phase: 'prompt' | 'input' | 'confirmed' } | null
 
+  // Live Share state
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [liveError, setLiveError] = useState(null);
+  const [sharePending, setSharePending] = useState(false);
+  const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
+  const lastParentSubmitRef = useRef(0);
+
   const prevMatchOver = useRef(false);
 
-  // Check for autosave on mount
+  // Mount: parse ?m= for spectator role; otherwise check for autosave.
   useEffect(function() {
+    var params = new URLSearchParams(window.location.search);
+    var urlMatchId = params.get("m");
+    // Restore parent name from a previous spectator session.
+    var savedName = "";
+    try { savedName = localStorage.getItem(LOCALSTORAGE_PARENT_NAME_KEY) || ""; } catch (e) {}
+    if (urlMatchId) {
+      if (!isFirebaseConfigured()) {
+        setLiveError("Live Share is unavailable in this build (no Firebase config). Please contact the scorekeeper for the score.");
+        setScreen(SCREEN.SPECTATOR);
+        setState(function(s) { return { ...s, role: "spectator", isShared: true, matchId: urlMatchId, parentName: savedName }; });
+        return;
+      }
+      setState(function(s) { return { ...s, role: "spectator", isShared: true, matchId: urlMatchId, parentName: savedName }; });
+      setScreen(SCREEN.SPECTATOR);
+      initFirebase();
+      return;
+    }
     var saved = loadAutosave();
     if (saved && saved.matchStarted) {
       setConfirmAction("restore");
       window.__scorelayer_autosave = saved;
     }
+    // Pre-warm Firebase if configured so the Share button feels instant.
+    if (isFirebaseConfigured()) initFirebase();
   }, []);
+
+  // Spectator: subscribe to RTDB and mirror server state into local state.
+  useEffect(function() {
+    if (state.role !== "spectator" || !state.matchId || !isFirebaseConfigured()) return undefined;
+    var unsubFn = null;
+    var cancelled = false;
+    initFirebase().then(function() {
+      if (cancelled) return;
+      unsubFn = sync.subscribeMatch(state.matchId, function(snap) {
+        if (!snap) {
+          setLiveError("Match not found. Ask the scorekeeper for a new link.");
+          return;
+        }
+        setLiveError(null);
+        var meta = snap.meta || {};
+        setState(function(s) {
+          return {
+            ...s,
+            teamA: meta.teamA || s.teamA,
+            teamB: meta.teamB || s.teamB,
+            matchTitle: meta.matchTitle || s.matchTitle,
+            setNumberOffset: meta.setNumberOffset || 0,
+            syncTimestamp: meta.syncTimestamp || null,
+            currentSet: meta.currentSet || 1,
+            setsA: meta.setsA || 0,
+            setsB: meta.setsB || 0,
+            pointsA: meta.pointsA || 0,
+            pointsB: meta.pointsB || 0,
+            matchStarted: !!meta.matchStarted,
+            matchOver: !!meta.matchOver,
+            extraSetMode: !!meta.extraSetMode,
+            pointLog: snap.pointLog,
+            parentHighlights: snap.parentHighlights,
+          };
+        });
+      }, function(err) {
+        setLiveError("Connection lost. Trying to reconnect…");
+      });
+    });
+    return function() {
+      cancelled = true;
+      if (unsubFn) unsubFn();
+    };
+  }, [state.role, state.matchId]);
+
+  // Scorekeeper: subscribe to parentHighlights only (so the moderation panel updates live).
+  useEffect(function() {
+    if (state.role !== "scorekeeper" || !state.matchId || !isFirebaseConfigured()) return undefined;
+    var unsubFn = null;
+    var cancelled = false;
+    initFirebase().then(function() {
+      if (cancelled) return;
+      unsubFn = sync.subscribeMatch(state.matchId, function(snap) {
+        if (!snap) return;
+        setState(function(s) { return { ...s, parentHighlights: snap.parentHighlights }; });
+      });
+    });
+    return function() {
+      cancelled = true;
+      if (unsubFn) unsubFn();
+    };
+  }, [state.role, state.matchId]);
 
   // Track Match.Complete when match ends naturally
   useEffect(function() {
@@ -2012,6 +2656,12 @@ function VolleyballTracker() {
     trackEvent('Match', 'Start');
   }, []);
 
+  // Mirror to RTDB if scorekeeper-shared. No-op otherwise. Errors are swallowed (logged in sync.*).
+  function mirrorIfShared(s, action) {
+    if (!s.isShared || s.role !== "scorekeeper" || !s.matchId) return;
+    try { action(); } catch (e) { console.warn("mirror failed:", e); }
+  }
+
   const handleSync = useCallback(function() {
     setState(function(s) {
       if (s.syncTimestamp) {
@@ -2019,7 +2669,9 @@ function VolleyballTracker() {
         setTimeout(function() { setConfirmAction("resync"); }, 0);
         return s;
       }
-      return { ...s, syncTimestamp: Date.now() };
+      var next = { ...s, syncTimestamp: Date.now() };
+      mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { syncTimestamp: next.syncTimestamp }); });
+      return next;
     });
   }, []);
 
@@ -2031,7 +2683,8 @@ function VolleyballTracker() {
       if (team === "A") pointsA++; else pointsB++;
       var target = getTargetPoints(setsA, setsB);
       var setWon = isSetWon(pointsA, pointsB, target);
-      var newLog = s.pointLog.concat([{ team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false, highlight: false, highlightNote: null, setWon: setWon }]);
+      var newPoint = { team: team, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, setNum: currentSet, timestamp: now, wallClock: now, correction: false, highlight: false, highlightNote: null, setWon: setWon };
+      var newLog = s.pointLog.concat([newPoint]);
       var matchOver = false;
       var newSetHistory = s.setHistory.slice();
       if (setWon) {
@@ -2046,7 +2699,9 @@ function VolleyballTracker() {
           else { pointsA = 0; pointsB = 0; currentSet++; }
         }
       }
-      return { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: newSetHistory, pointLog: newLog, matchOver: matchOver };
+      var next = { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: newSetHistory, pointLog: newLog, matchOver: matchOver };
+      mirrorIfShared(s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
+      return next;
     });
   }, []);
 
@@ -2058,8 +2713,11 @@ function VolleyballTracker() {
       var now = Date.now();
       var newPA = team === "A" ? s.pointsA - 1 : s.pointsA;
       var newPB = team === "B" ? s.pointsB - 1 : s.pointsB;
-      var newLog = s.pointLog.concat([{ team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null, setWon: false }]);
-      return { ...s, pointsA: newPA, pointsB: newPB, pointLog: newLog };
+      var newPoint = { team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null, setWon: false };
+      var newLog = s.pointLog.concat([newPoint]);
+      var next = { ...s, pointsA: newPA, pointsB: newPB, pointLog: newLog };
+      mirrorIfShared(s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
+      return next;
     });
   }, []);
 
@@ -2085,7 +2743,10 @@ function VolleyballTracker() {
           }
         }
       }
-      return { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: sh, pointLog: newLog, matchOver: false };
+      var next = { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: sh, pointLog: newLog, matchOver: false };
+      // Undo rewrites the entire log (not append-only), so replace on the server too.
+      mirrorIfShared(s, function() { sync.replacePointLog(s.matchId, newLog, sync.buildMetaPatch(next)); });
+      return next;
     });
   }, []);
 
@@ -2099,7 +2760,10 @@ function VolleyballTracker() {
       } else {
         newLog[logIndex] = { ...newLog[logIndex], highlight: true };
       }
-      return { ...s, pointLog: newLog };
+      var next = { ...s, pointLog: newLog };
+      // Highlight toggle mutates an existing entry; replace the whole log to keep server in sync.
+      mirrorIfShared(s, function() { sync.replacePointLog(s.matchId, newLog, sync.buildMetaPatch(next)); });
+      return next;
     });
   }, []);
 
@@ -2110,9 +2774,77 @@ function VolleyballTracker() {
       if (!entry) return s;
       var newLog = s.pointLog.slice();
       newLog[logIndex] = { ...newLog[logIndex], highlight: true, highlightNote: note || null };
-      return { ...s, pointLog: newLog };
+      var next = { ...s, pointLog: newLog };
+      mirrorIfShared(s, function() { sync.replacePointLog(s.matchId, newLog, sync.buildMetaPatch(next)); });
+      return next;
     });
   }, []);
+
+  const handleStartShare = useCallback(function() {
+    if (!isFirebaseConfigured()) {
+      setLiveError("Live Share is not configured in this build.");
+      return;
+    }
+    setLiveError(null);
+    setSharePending(true);
+    initFirebase().then(function(uid) {
+      if (!uid) {
+        setSharePending(false);
+        setLiveError(describeFirebaseError(firebaseLastError) || "Could not sign in to Firebase. Check your network and try again.");
+        return;
+      }
+      // Use the most recent state captured via setState's updater so the meta seeds correctly.
+      setState(function(s) {
+        sync.createMatch(s).then(function(matchId) {
+          setSharePending(false);
+          if (!matchId) {
+            setLiveError(describeFirebaseError(firebaseLastError) || "Could not start share. Check your network and try again.");
+            return;
+          }
+          setState(function(s2) { return { ...s2, role: "scorekeeper", isShared: true, matchId: matchId }; });
+        });
+        return s;
+      });
+    });
+  }, []);
+
+  const handleStopShare = useCallback(function() {
+    setState(function(s) {
+      if (s.matchId) {
+        // Mark match as ended on the server so spectators stop submitting.
+        sync.updateMeta(s.matchId, { matchOver: true });
+      }
+      return { ...s, isShared: false, role: "solo", matchId: null };
+    });
+    setShareModalOpen(false);
+  }, []);
+
+  const handleSubmitParentHighlight = useCallback(function(name, note) {
+    if (!state.matchId) return;
+    var nowMs = Date.now();
+    if (nowMs - lastParentSubmitRef.current < PARENT_HIGHLIGHT_THROTTLE_MS) {
+      var waitS = Math.ceil((PARENT_HIGHLIGHT_THROTTLE_MS - (nowMs - lastParentSubmitRef.current)) / 1000);
+      setParentSubmitStatus({ msg: "Please wait " + waitS + "s before submitting again.", isError: true });
+      return;
+    }
+    lastParentSubmitRef.current = nowMs;
+    var trimmedName = (name || "").trim();
+    if (trimmedName) {
+      try { localStorage.setItem(LOCALSTORAGE_PARENT_NAME_KEY, trimmedName); } catch (e) {}
+    }
+    setState(function(s) { return { ...s, parentName: trimmedName }; });
+    setParentSubmitStatus({ msg: "Submitting…", isError: false });
+    sync.submitParentHighlight(state.matchId, trimmedName, note).then(function(key) {
+      if (key) setParentSubmitStatus({ msg: "Submitted!", isError: false });
+      else setParentSubmitStatus({ msg: "Submission failed. Try again.", isError: true });
+      setTimeout(function() { setParentSubmitStatus(null); }, 3000);
+    });
+  }, [state.matchId]);
+
+  const handleDeleteParentHighlight = useCallback(function(highlightId) {
+    if (!state.matchId || !highlightId) return;
+    sync.deleteParentHighlight(state.matchId, highlightId);
+  }, [state.matchId]);
 
   function showHighlightPill(logIndex) {
     if (highlightPrompt && highlightPrompt.timer) {
@@ -2203,7 +2935,7 @@ function VolleyballTracker() {
       if (!content) { window.alert("No sync point set or no points recorded."); return; }
     } else if (type === "chapters") {
       fname += "_chapters.txt";
-      var chapters = buildYouTubeChapterList(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, offset);
+      var chapters = buildYouTubeChapterList(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, offset, state.parentHighlights);
       if (chapters.length === 0) { window.alert("No sync point set or no points recorded."); return; }
       content = chapters.map(function(c) { return msToChapterTime(c.timeMs) + " " + c.text; }).join("\n");
       var validation = validateYouTubeChapters(chapters);
@@ -2213,11 +2945,11 @@ function VolleyballTracker() {
         return;
       }
     } else if (type === "hlsrt") {
-      content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.setNumberOffset || 0);
+      content = generateHighlightsSRT(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.setNumberOffset || 0, state.parentHighlights);
       fname += "_highlights.srt";
       if (!content) { window.alert("No highlights marked or no sync point set."); return; }
     } else {
-      content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+      content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, state.parentHighlights);
       fname += ".csv";
     }
     var exportEventMap = { srt: 'SRT', fcpxml: 'FCPXML', ass: 'ASS', chroma: 'ChromaScript', chapters: 'Chapters', hlsrt: 'HlSRT', csv: 'CSV' };
@@ -2246,7 +2978,7 @@ function VolleyballTracker() {
 
   function downloadCSV() {
     trackEvent('Export', 'CSV');
-    var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle);
+    var content = generateCSV(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, state.parentHighlights);
     var fname = "scorelayer_" + state.teamA + "_vs_" + state.teamB + ".csv";
     var blob = new Blob([content], { type: "text/csv" });
     shareOrDownload(blob, fname, "text/csv");
@@ -2492,6 +3224,25 @@ function VolleyballTracker() {
                 <button className={"btn btn-small btn-sync-alert"} onClick={handleSync}>Sync Now</button>
               </>
             )}
+            {isFirebaseConfigured() && (
+              state.isShared && state.role === "scorekeeper" ? (
+                <button
+                  className="btn btn-small"
+                  style={{ background: "rgba(34,197,94,0.15)", color: "var(--success)", marginLeft: 6 }}
+                  onClick={function() { setLiveError(null); setShareModalOpen(true); }}
+                >
+                  ● Live
+                </button>
+              ) : (
+                <button
+                  className="btn btn-small"
+                  style={{ marginLeft: 6 }}
+                  onClick={function() { setLiveError(null); setShareModalOpen(true); }}
+                >
+                  Share live
+                </button>
+              )
+            )}
           </div>
 
           <div className="sets-bar">
@@ -2618,7 +3369,11 @@ function VolleyballTracker() {
             </button>
             {state.pointLog.length > 0 && <span className="autosave-badge">auto-saved</span>}
             {state.extraSetMode
-              ? <button className="btn btn-danger" onClick={function() { setState(function(s) { return { ...s, matchOver: true, extraSetMode: false }; }); }}>End Match</button>
+              ? <button className="btn btn-danger" onClick={function() { setState(function(s) {
+                  var next = { ...s, matchOver: true, extraSetMode: false };
+                  mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: true, extraSetMode: false }); });
+                  return next;
+                }); }}>End Match</button>
               : <button className="btn btn-danger" onClick={function() { setConfirmAction("end"); }}>End Match</button>
             }
           </div>
@@ -2644,6 +3399,39 @@ function VolleyballTracker() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {showLog && state.role === "scorekeeper" && state.isShared && (state.parentHighlights || []).length > 0 && (
+            <div className="parent-list" style={{ borderTop: "1px solid var(--surface2)", borderRadius: 0, marginTop: 0 }}>
+              <div className="parent-list-title">
+                Parent highlights ({(state.parentHighlights || []).filter(function(h) { return !h.deleted; }).length})
+              </div>
+              {(state.parentHighlights || [])
+                .slice()
+                .sort(function(a, b) { return (b.clientTimestamp || 0) - (a.clientTimestamp || 0); })
+                .map(function(h) {
+                  var offsetMs = state.syncTimestamp ? (h.clientTimestamp - state.syncTimestamp) : null;
+                  var offsetTxt = (offsetMs != null && offsetMs >= 0) ? msToChapterTime(offsetMs) : "\u2014";
+                  return (
+                    <div className={"parent-entry" + (h.deleted ? " parent-entry-deleted" : "")} key={h.id}>
+                      <div className="parent-entry-meta">
+                        {formatClockTime(h.clientTimestamp)} \u00B7 video {offsetTxt}
+                        {!h.deleted && (
+                          <button
+                            className="parent-entry-delete-btn"
+                            onClick={function() { handleDeleteParentHighlight(h.id); }}
+                            style={{ float: "right" }}
+                          >Delete</button>
+                        )}
+                      </div>
+                      <div>
+                        {h.name && <span className="parent-entry-name">{h.name}: </span>}
+                        <span className="parent-entry-note">{h.note}</span>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
@@ -2691,7 +3479,9 @@ function VolleyballTracker() {
           {/* Continue match button */}
           <button className="btn btn-secondary" onClick={function() {
             setState(function(s) {
-              return { ...s, matchOver: false, currentSet: s.currentSet + 1, pointsA: 0, pointsB: 0, extraSetMode: true };
+              var next = { ...s, matchOver: false, currentSet: s.currentSet + 1, pointsA: 0, pointsB: 0, extraSetMode: true };
+              mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: false, currentSet: next.currentSet, pointsA: 0, pointsB: 0, extraSetMode: true }); });
+              return next;
             });
           }}>Continue match (+1 set)</button>
 
@@ -2772,6 +3562,28 @@ function VolleyballTracker() {
         </div>
       )}
 
+      {/* ========== SPECTATOR SCREEN (Live Share) ========== */}
+      {screen === SCREEN.SPECTATOR && (
+        <SpectatorView
+          state={state}
+          liveError={liveError}
+          parentSubmitStatus={parentSubmitStatus}
+          onSubmitHighlight={handleSubmitParentHighlight}
+        />
+      )}
+
+      {/* ========== SHARE MODAL ========== */}
+      {shareModalOpen && (
+        <ShareModalView
+          state={state}
+          liveError={liveError}
+          sharePending={sharePending}
+          onClose={function() { setShareModalOpen(false); setLiveError(null); }}
+          onStart={handleStartShare}
+          onStop={handleStopShare}
+        />
+      )}
+
       {/* ========== EXPORT MODAL ========== */}
       {exportModal && (
         <div className="export-modal-overlay" onClick={function() { setExportModal(null); }}>
@@ -2823,7 +3635,11 @@ function VolleyballTracker() {
               <button className="btn btn-danger" onClick={function() {
                 if (confirmAction === "end") {
                   trackEvent('Match', 'EndEarly');
-                  setState(function(s) { return { ...s, matchOver: true, setHistory: s.setHistory.concat([{ winnerA: s.pointsA > s.pointsB, scoreA: s.pointsA, scoreB: s.pointsB }]) }; });
+                  setState(function(s) {
+                    var next = { ...s, matchOver: true, setHistory: s.setHistory.concat([{ winnerA: s.pointsA > s.pointsB, scoreA: s.pointsA, scoreB: s.pointsB }]) };
+                    mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { matchOver: true }); });
+                    return next;
+                  });
                 } else { resetMatch(); }
                 setConfirmAction(null);
               }}>{confirmAction === "end" ? "End Match" : "Reset"}</button>
@@ -2842,7 +3658,11 @@ function VolleyballTracker() {
               <button className="btn btn-secondary" onClick={function() { setConfirmAction(null); }}>Cancel</button>
               <button className="btn btn-danger" onClick={function() {
                 var now = Date.now();
-                setState(function(s) { return { ...s, syncTimestamp: now }; });
+                setState(function(s) {
+                  var next = { ...s, syncTimestamp: now };
+                  mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { syncTimestamp: now }); });
+                  return next;
+                });
                 autosaveState({ ...state, syncTimestamp: now });
                 setConfirmAction(null);
               }}>Re-sync</button>
