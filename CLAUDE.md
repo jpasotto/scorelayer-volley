@@ -11,6 +11,18 @@ To preview locally, serve the root directory with any static file server:
 python3 -m http.server 8080
 ```
 
+## Tests
+
+Tier-1 unit tests guard the export pipeline (YouTube chapters, CSV, SRT, FCPXML, ASS, Highlights SRT) against regression. They live in `tests/` and run on Node 20+ built-ins only — no `package.json`, no install step, no toolchain.
+
+```bash
+node --test tests/*.test.mjs
+```
+
+The harness (`tests/harness.mjs`) reads `index-v3.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
+
+Fixtures live under `tests/fixtures/`. CI runs the suite on every PR via `.github/workflows/test.yml`.
+
 ## Architecture
 
 The entire application is a **single `index.html` file** with no build toolchain, no npm, and no backend.

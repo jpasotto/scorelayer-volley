@@ -1,0 +1,24 @@
+{
+  "syncTimestamp": 1700000000000,
+  "teamA": "Hawks",
+  "teamB": "Eagles",
+  "matchTitle": "Hawks vs Eagles, Final",
+  "setNumberOffset": 0,
+  "pointLog": [
+    { "timestamp": 1700000030000, "wallClock": 1700000030000, "setNum": 1, "pointsA": 1, "pointsB": 0, "setsA": 0, "setsB": 0, "team": "A", "correction": false, "highlight": false },
+    { "timestamp": 1700000060000, "wallClock": 1700000060000, "setNum": 1, "pointsA": 1, "pointsB": 1, "setsA": 0, "setsB": 0, "team": "B", "correction": false, "highlight": false },
+    { "timestamp": 1700000090000, "wallClock": 1700000090000, "setNum": 1, "pointsA": 2, "pointsB": 1, "setsA": 0, "setsB": 0, "team": "A", "correction": false, "highlight": true, "highlightNote": "Great spike" },
+    { "timestamp": 1700000120000, "wallClock": 1700000120000, "setNum": 1, "pointsA": 2, "pointsB": 2, "setsA": 0, "setsB": 0, "team": "B", "correction": true, "highlight": false },
+    { "timestamp": 1700000150000, "wallClock": 1700000150000, "setNum": 1, "pointsA": 3, "pointsB": 2, "setsA": 0, "setsB": 0, "team": "A", "correction": false, "highlight": true },
+    { "timestamp": 1700000180000, "wallClock": 1700000180000, "setNum": 1, "pointsA": 3, "pointsB": 3, "setsA": 0, "setsB": 0, "team": "B", "correction": false, "highlight": false },
+    { "timestamp": 1700000220000, "wallClock": 1700000220000, "setNum": 2, "pointsA": 1, "pointsB": 0, "setsA": 1, "setsB": 0, "team": "A", "correction": false, "highlight": false },
+    { "timestamp": 1700000250000, "wallClock": 1700000250000, "setNum": 2, "pointsA": 1, "pointsB": 1, "setsA": 1, "setsB": 0, "team": "B", "correction": false, "highlight": false },
+    { "timestamp": 1700000280000, "wallClock": 1700000280000, "setNum": 2, "pointsA": 2, "pointsB": 1, "setsA": 1, "setsB": 0, "team": "A", "correction": false, "highlight": true, "highlightNote": "Block" },
+    { "timestamp": 1700000320000, "wallClock": 1700000320000, "setNum": 2, "pointsA": 3, "pointsB": 1, "setsA": 1, "setsB": 0, "team": "A", "correction": false, "highlight": false }
+  ],
+  "parentHighlights": [
+    { "clientTimestamp": 1700000100000, "name": "Alice", "note": "Big rally", "deleted": false },
+    { "clientTimestamp": 1700000270000, "name": "Bob", "note": "Net violation?", "deleted": false },
+    { "clientTimestamp": 1700000999000, "name": "Mallory", "note": "Should be hidden", "deleted": true }
+  ]
+}
