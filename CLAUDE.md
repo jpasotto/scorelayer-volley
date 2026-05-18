@@ -67,12 +67,12 @@ Live Share is built into `index.html`. With Firebase configured, a scorekeeper c
 **RTDB tree** (`/matches/{matchId}`):
 - `meta/` — scorekeeper-only writes; teamA, teamB, syncTimestamp, scoreboard mirror, `scorekeeperUid`.
 - `points/` — append-only; same shape as the local `pointLog` entries (corrections written as new entries with `correction:true`).
-- `parentHighlights/{pushId}` — any signed-in user appends `{ name?, note, clientTimestamp, serverTimestamp, deleted }`. Scorekeeper alone can flip `deleted:true` to hide an entry.
+- `parentHighlights/{pushId}` — any signed-in user appends `{ name?, note?, tag?, quick, snapshot?, clientTimestamp, serverTimestamp, deleted }`. `tag` is one of `ace|block|kill|dig|set|error` (optional one-tap category). `quick:true` marks note-less one-tap submissions. `snapshot` freezes the live score (`pointsA, pointsB, setsA, setsB, setNum`) at submission time so the feed and the in-video overlay can show "S2 14–12" without depending on later corrections. Scorekeeper alone can flip `deleted:true` to hide an entry.
 
 **Security rules:** see `firebase-rules.json`. Paste into the Firebase console under Realtime Database ▸ Rules. They restrict `meta/` and `points/` writes to the scorekeeper UID, cap parent notes at 140 chars and names at 40 chars, and only allow the scorekeeper to set `deleted`.
 
 **Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 
-**Parent highlights in exports:** YouTube chapters, CSV, and Highlights SRT all merge accepted (non-deleted) parent submissions in addition to the scorekeeper's `★` highlights. Parent timestamps come from the submitting client's `Date.now()` at button-press, so they align with the same `syncTimestamp` the scorekeeper used.
+**Parent highlights in exports:** YouTube chapters, CSV, Highlights SRT, **and** the in-video score overlay (`buildOverlayEntries`) all merge accepted (non-deleted) parent submissions in addition to the scorekeeper's `★` highlights. Parent timestamps come from the submitting client's `Date.now()` at button-press, so they align with the same `syncTimestamp` the scorekeeper used. For the overlay, each parent highlight whose offset falls inside an existing score entry flips that entry's `highlight=true` and appends `[tag · name · note]` to `highlightNote` (joined onto any existing scorekeeper note with ` + `).
 
 **Beta-era share links:** `index-v3.html` exists at the repo root as a thin client-side redirect to `index.html` (preserving any `?m=` query string), so QR codes and links generated during the v3.0 beta keep working.
