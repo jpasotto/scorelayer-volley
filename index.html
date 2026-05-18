@@ -235,7 +235,7 @@ var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.0.0-beta";
+var APP_VERSION = "3.1.0-beta";
 
 // --- Live Share (Firebase RTDB) ---
 // Web client config for the scorelayer-volley Firebase project. The apiKey is
@@ -3676,7 +3676,7 @@ function VolleyballTracker() {
         <div className="beta-modal-overlay" onClick={function() { setShowBetaModal(false); }}>
           <div className="beta-modal" onClick={function(e) { e.stopPropagation(); }}>
             <div className="beta-modal-icon">⚡</div>
-            <div className="beta-modal-title">ScoreLayer Volley Beta</div>
+            <div className="beta-modal-title">ScoreLayer Volley v{APP_VERSION}</div>
             <div className="beta-modal-msg">All features are <strong>free to use</strong> during the beta phase.</div>
             <div className="beta-modal-note">Export tools — MP4, SRT, FCPXML, YouTube Chapters and more — may require a plan after the official launch.</div>
             <button className="btn btn-primary" style={{ width: "100%" }} onClick={function() { setShowBetaModal(false); }}>Got it</button>
