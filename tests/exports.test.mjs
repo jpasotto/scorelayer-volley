@@ -207,6 +207,80 @@ test("buildOverlayEntries: non-highlight pointLog → all score entries have hig
   });
 });
 
+test("buildOverlayEntries: parent highlight marks the score entry whose window contains its timestamp", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 300000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  // Parent submits at sync + 250s — falls inside the second score entry's window.
+  const ph = [
+    { clientTimestamp: sync + 250000, name: "Alice", note: "Big rally", tag: "ace", deleted: false },
+  ];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  const target = entries.find(e => e.type === "score" && e.score && e.score.includes("2 : 0"));
+  assert.ok(target, "expected entry for score 2 : 0");
+  assert.equal(target.highlight, true, "parent highlight should flip the matching entry to highlight=true");
+  assert.ok(target.highlightNote && target.highlightNote.includes("Alice"), "highlightNote should include the parent name");
+  assert.ok(target.highlightNote.includes("Ace"), "highlightNote should include the tag label");
+  assert.ok(target.highlightNote.includes("Big rally"), "highlightNote should include the parent note");
+});
+
+test("buildOverlayEntries: deleted parent highlights are ignored", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const ph = [
+    { clientTimestamp: sync + 150000, name: "Mallory", note: "noise", deleted: true },
+  ];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  entries.filter(e => e.type === "score").forEach(e => {
+    assert.equal(e.highlight, false, "no entry should be flagged when the only parent highlight is deleted");
+  });
+});
+
+test("buildOverlayEntries: parent highlight with negative offset is ignored", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const ph = [{ clientTimestamp: sync - 5000, name: "Early", note: "pre-sync", deleted: false }];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  entries.filter(e => e.type === "score").forEach(e => {
+    assert.equal(e.highlight, false, "negative-offset parent highlight must not mark any entry");
+  });
+});
+
+test("buildOverlayEntries: parent highlight on a scorekeeper-starred entry appends with ' + ' rather than overwriting", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: true,  highlightNote: "Great spike" },
+    { timestamp: sync + 300000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const ph = [{ clientTimestamp: sync + 250000, name: "Alice", note: "agreed", deleted: false }];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  const target = entries.find(e => e.type === "score" && e.score && e.score.includes("2 : 0"));
+  assert.ok(target, "expected score 2 : 0 entry");
+  assert.ok(target.highlightNote.includes("Great spike"), "original scorekeeper note must be preserved");
+  assert.ok(target.highlightNote.includes("Alice"), "parent name must be appended");
+  assert.ok(target.highlightNote.includes(" + "), "join must use ' + ' delimiter");
+});
+
+test("buildOverlayEntries: omitting parentHighlights arg leaves output unchanged (back-compat)", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const without = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+  const withEmpty = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, []);
+  assert.deepEqual(without, withEmpty, "no-arg and empty-array forms must produce identical output");
+});
+
 test("buildOverlayEntries: set-boundary guard — highlight on first point of set 2 does not propagate to last entry of set 1", () => {
   const sync = 1700000000000;
   const log = [

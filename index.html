@@ -218,6 +218,23 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .parent-entry-note { color: var(--text); }
   .parent-entry-deleted { color: var(--text-dim); text-decoration: line-through; }
   .parent-entry-delete-btn { background: transparent; border: none; color: var(--team-b); font-size: 10px; cursor: pointer; padding: 0 4px; letter-spacing: 1px; }
+  .parent-entry-meta-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .parent-entry-score { color: var(--text); font-family: var(--font-mono); font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--surface2); letter-spacing: 0.5px; }
+  .parent-entry-tag { color: var(--warning); font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .parent-form-row { display: flex; gap: 8px; }
+  .tag-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .tag-chip { background: var(--surface2); border: 1px solid var(--surface2); color: var(--text-dim); font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; padding: 6px 10px; border-radius: 999px; cursor: pointer; font-family: var(--font-display); }
+  .tag-chip:hover { color: var(--text); }
+  .tag-chip.active { background: rgba(245,158,11,0.15); border-color: var(--warning); color: var(--warning); }
+  .spectator-prev-sets { background: var(--surface); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .spectator-prev-sets-title { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 2px; }
+  .spectator-prev-set-row { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--font-mono); font-size: 13px; }
+  .spectator-prev-set-label { color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; font-size: 11px; }
+  .spectator-prev-set-score { color: var(--text-dim); }
+  .spectator-prev-set-score .winner { color: var(--text); font-weight: 700; }
+  .spectator-prev-set-score.a-won .winner { color: var(--team-a); }
+  .spectator-prev-set-score.b-won .winner { color: var(--team-b); }
+  .spectator-prev-set-dash { margin: 0 6px; color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -235,7 +252,7 @@ var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.1.0-beta";
+var APP_VERSION = "3.2.0-beta";
 
 // --- Live Share (Firebase RTDB) ---
 // Web client config for the scorelayer-volley Firebase project. The apiKey is
@@ -250,6 +267,21 @@ var FIREBASE_CONFIG = {
 };
 var PARENT_HIGHLIGHT_MAX_LEN = 140;
 var PARENT_HIGHLIGHT_THROTTLE_MS = 15000;
+// Optional one-tap categorisation for parent-submitted highlights.
+// `value` ships to RTDB as `tag`; `label` is the chip text in the spectator modal.
+var TECH_HIGHLIGHT_TAGS = [
+  { value: "ace",   label: "Ace" },
+  { value: "block", label: "Block" },
+  { value: "kill",  label: "Kill" },
+  { value: "dig",   label: "Dig" },
+  { value: "set",   label: "Set" },
+  { value: "error", label: "Error" }
+];
+var TECH_HIGHLIGHT_TAG_LABELS = (function() {
+  var m = {};
+  TECH_HIGHLIGHT_TAGS.forEach(function(t) { m[t.value] = t.label; });
+  return m;
+})();
 var FIREBASE_READY = false;
 var firebaseAuthPromise = null;
 var firebaseLastError = null;
@@ -815,7 +847,7 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberO
 }
 
 // --- Build entries array from pointLog (shared by MP4 generator and chroma script) ---
-function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
+function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset, parentHighlights) {
   if (!syncTimestamp || pointLog.length === 0) return [];
   var title = (matchTitle || "").trim();
   var QR_LEAD  = 20;
@@ -910,6 +942,37 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
       }
     }
   }
+
+  // Merge parent highlights: each non-deleted parent submission marks the
+  // overlay 'score' entry whose [start,end) window contains its offset, so the
+  // recorded video gets the same ★ treatment as scorekeeper-tagged stars.
+  if (parentHighlights && parentHighlights.length > 0) {
+    for (var ph = 0; ph < parentHighlights.length; ph++) {
+      var h = parentHighlights[ph];
+      if (!h || h.deleted) continue;
+      if (typeof h.clientTimestamp !== "number") continue;
+      var tSec = (h.clientTimestamp - syncTimestamp) / 1000;
+      if (tSec < 0) continue;
+      var target = null;
+      for (var k = 0; k < entries.length; k++) {
+        var e = entries[k];
+        if (e.blank || e.type !== "score") continue;
+        if (tSec >= e.start && tSec < e.end) { target = e; break; }
+      }
+      if (!target) continue;
+      var parentBlurb = [
+        h.tag ? (TECH_HIGHLIGHT_TAG_LABELS[h.tag] || h.tag) : null,
+        h.name || null,
+        h.note || null
+      ].filter(Boolean).join(" · ");
+      if (!parentBlurb) parentBlurb = "Parent highlight";
+      target.highlight = true;
+      target.highlightNote = target.highlightNote
+        ? target.highlightNote + " + " + parentBlurb
+        : parentBlurb;
+    }
+  }
+
   return entries.filter(function(e) { return e.end > e.start; });
 }
 // EXPORTERS_END — sliced by tests/harness.mjs; do not remove
@@ -2227,13 +2290,26 @@ var sync = (function() {
     return function unsubscribe() { ref.off("value", handler); };
   }
 
-  function submitParentHighlight(matchId, name, note) {
+  function submitParentHighlight(matchId, payload) {
     if (!FIREBASE_READY || !matchId) return Promise.resolve(null);
-    var trimmedNote = (note || "").trim().slice(0, PARENT_HIGHLIGHT_MAX_LEN);
-    var trimmedName = (name || "").trim().slice(0, 40);
+    payload = payload || {};
+    var trimmedNote = (payload.note || "").trim().slice(0, PARENT_HIGHLIGHT_MAX_LEN);
+    var trimmedName = (payload.name || "").trim().slice(0, 40);
+    var validTag = null;
+    if (payload.tag && TECH_HIGHLIGHT_TAG_LABELS[payload.tag]) validTag = payload.tag;
+    var snap = payload.snapshot && typeof payload.snapshot === "object" ? {
+      pointsA: payload.snapshot.pointsA | 0,
+      pointsB: payload.snapshot.pointsB | 0,
+      setsA:   payload.snapshot.setsA   | 0,
+      setsB:   payload.snapshot.setsB   | 0,
+      setNum:  payload.snapshot.setNum  | 0,
+    } : null;
     var entry = {
       name: trimmedName || null,
       note: trimmedNote || null,
+      tag: validTag,
+      quick: !trimmedNote,
+      snapshot: snap,
       clientTimestamp: Date.now(),
       serverTimestamp: firebase.database.ServerValue.TIMESTAMP,
       deleted: false,
@@ -2283,22 +2359,40 @@ function SpectatorView(props) {
   const state = props.state;
   const [name, setName] = useState(state.parentName || "");
   const [note, setNote] = useState("");
+  const [tag, setTag] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   var disabledReason = props.liveError ? props.liveError : (state.matchOver ? "Match ended — highlights are closed." : null);
 
+  function makeSnapshot() {
+    return {
+      pointsA: state.pointsA || 0,
+      pointsB: state.pointsB || 0,
+      setsA:   state.setsA   || 0,
+      setsB:   state.setsB   || 0,
+      setNum:  state.currentSet || 1,
+    };
+  }
+
   function submit() {
     var trimmed = (note || "").trim();
-    if (!trimmed) return;
+    if (!trimmed && !tag) return;
     if (state.matchOver) return;
-    props.onSubmitHighlight(name, trimmed);
+    props.onSubmitHighlight({ name: name, note: trimmed, tag: tag, snapshot: makeSnapshot() });
     setNote("");
+    setTag(null);
     setModalOpen(false);
+  }
+
+  function submitQuick() {
+    if (disabledReason) return;
+    props.onSubmitHighlight({ name: name, note: "", tag: null, snapshot: makeSnapshot() });
   }
 
   function openModal() {
     if (disabledReason) return;
     setNote("");
+    setTag(null);
     setModalOpen(true);
   }
 
@@ -2315,6 +2409,13 @@ function SpectatorView(props) {
     .filter(function(h) { return !h.deleted; })
     .sort(function(a, b) { return (b.clientTimestamp || 0) - (a.clientTimestamp || 0); });
 
+  // Previous-set scores derived from the pointLog the spectator already
+  // receives — no extra meta channel needed. setWon entries mark the closing
+  // point of each finished set (skip corrections defensively).
+  var prevSets = (state.pointLog || [])
+    .filter(function(p) { return p.setWon === true && !p.correction; })
+    .map(function(p) { return { setNum: p.setNum, scoreA: p.pointsA, scoreB: p.pointsB }; });
+
   var setLabel = formatSetLabel(state.currentSet, state.setNumberOffset || 0);
   var connected = state.matchStarted || state.pointLog.length > 0;
 
@@ -2326,6 +2427,25 @@ function SpectatorView(props) {
       </div>
       {props.liveError && (
         <div className="parent-status err">{props.liveError}</div>
+      )}
+
+      {prevSets.length > 0 && (
+        <div className="spectator-prev-sets">
+          <div className="spectator-prev-sets-title">Previous sets</div>
+          {prevSets.map(function(s, i) {
+            var aWon = s.scoreA > s.scoreB;
+            return (
+              <div className="spectator-prev-set-row" key={i}>
+                <span className="spectator-prev-set-label">{formatSetLabel(s.setNum, state.setNumberOffset || 0)}</span>
+                <span className={"spectator-prev-set-score " + (aWon ? "a-won" : "b-won")}>
+                  <span className={aWon ? "winner" : ""}>{s.scoreA}</span>
+                  <span className="spectator-prev-set-dash">–</span>
+                  <span className={aWon ? "" : "winner"}>{s.scoreB}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       <div className="spectator-scoreboard">
@@ -2352,13 +2472,25 @@ function SpectatorView(props) {
             {props.parentSubmitStatus.msg}
           </div>
         )}
-        <button
-          className="btn btn-primary"
-          disabled={!!disabledReason}
-          onClick={openModal}
-        >
-          ★ Mark highlight
-        </button>
+        <div className="parent-form-row">
+          <button
+            className="btn btn-primary"
+            disabled={!!disabledReason}
+            onClick={openModal}
+            style={{ flex: 2 }}
+          >
+            ★ Mark highlight
+          </button>
+          <button
+            className="btn btn-secondary"
+            disabled={!!disabledReason}
+            onClick={submitQuick}
+            title="One-tap highlight — records the current score with no note"
+            style={{ flex: 1 }}
+          >
+            ★ Quick
+          </button>
+        </div>
         {state.matchOver && !props.liveError && (
           <div className="share-hint" style={{ marginTop: 4 }}>Match ended. Highlights will reopen if the scorekeeper continues the match.</div>
         )}
@@ -2369,6 +2501,22 @@ function SpectatorView(props) {
           <div className="share-dialog" onClick={function(e) { e.stopPropagation(); }}>
             <div className="share-title">Mark highlight</div>
             <div className="share-hint" style={{ marginBottom: 8 }}>Tag a great moment so it shows up in the final video.</div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>Category (optional)</label>
+              <div className="tag-chip-row">
+                {TECH_HIGHLIGHT_TAGS.map(function(t) {
+                  var active = tag === t.value;
+                  return (
+                    <button
+                      type="button"
+                      key={t.value}
+                      className={"tag-chip" + (active ? " active" : "")}
+                      onClick={function() { setTag(active ? null : t.value); }}
+                    >{t.label}</button>
+                  );
+                })}
+              </div>
+            </div>
             <div>
               <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1, marginTop: 8 }}>Your name (optional)</label>
               <input
@@ -2404,7 +2552,7 @@ function SpectatorView(props) {
               <button
                 className="btn btn-primary"
                 style={{ flex: 1 }}
-                disabled={!note.trim() || state.matchOver}
+                disabled={(!note.trim() && !tag) || state.matchOver}
                 onClick={submit}
               >
                 Submit
@@ -2420,13 +2568,27 @@ function SpectatorView(props) {
           {sortedHighlights.map(function(h) {
             var offsetMs = state.syncTimestamp ? (h.clientTimestamp - state.syncTimestamp) : null;
             var offsetTxt = (offsetMs != null && offsetMs >= 0) ? msToChapterTime(offsetMs) : formatClockTime(h.clientTimestamp);
+            var snap = h.snapshot;
+            var setLbl = snap ? formatSetLabel(snap.setNum, state.setNumberOffset || 0) : null;
+            var scoreTxt = snap ? (snap.pointsA + "–" + snap.pointsB) : null;
+            var tagLabel = h.tag ? (TECH_HIGHLIGHT_TAG_LABELS[h.tag] || h.tag) : null;
             return (
               <div className="parent-entry" key={h.id}>
-                <div className="parent-entry-meta">{offsetTxt}</div>
-                <div>
-                  {h.name && <span className="parent-entry-name">{h.name}: </span>}
-                  <span className="parent-entry-note">{h.note}</span>
+                <div className="parent-entry-meta parent-entry-meta-row">
+                  <span>{offsetTxt}</span>
+                  {snap && (
+                    <span className="parent-entry-score">{setLbl} {scoreTxt}</span>
+                  )}
+                  {tagLabel && (
+                    <span className="parent-entry-tag">{"★ " + tagLabel}</span>
+                  )}
                 </div>
+                {(h.name || h.note) && (
+                  <div>
+                    {h.name && <span className="parent-entry-name">{h.name}{h.note ? ": " : ""}</span>}
+                    {h.note && <span className="parent-entry-note">{h.note}</span>}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -2828,8 +2990,9 @@ function VolleyballTracker() {
     setShareModalOpen(false);
   }, []);
 
-  const handleSubmitParentHighlight = useCallback(function(name, note) {
+  const handleSubmitParentHighlight = useCallback(function(payload) {
     if (!state.matchId) return;
+    payload = payload || {};
     var nowMs = Date.now();
     if (nowMs - lastParentSubmitRef.current < PARENT_HIGHLIGHT_THROTTLE_MS) {
       var waitS = Math.ceil((PARENT_HIGHLIGHT_THROTTLE_MS - (nowMs - lastParentSubmitRef.current)) / 1000);
@@ -2837,13 +3000,18 @@ function VolleyballTracker() {
       return;
     }
     lastParentSubmitRef.current = nowMs;
-    var trimmedName = (name || "").trim();
+    var trimmedName = (payload.name || "").trim();
     if (trimmedName) {
       try { localStorage.setItem(LOCALSTORAGE_PARENT_NAME_KEY, trimmedName); } catch (e) {}
     }
     setState(function(s) { return { ...s, parentName: trimmedName }; });
     setParentSubmitStatus({ msg: "Submitting…", isError: false });
-    sync.submitParentHighlight(state.matchId, trimmedName, note).then(function(key) {
+    sync.submitParentHighlight(state.matchId, {
+      name: trimmedName,
+      note: payload.note || "",
+      tag: payload.tag || null,
+      snapshot: payload.snapshot || null
+    }).then(function(key) {
       if (key) setParentSubmitStatus({ msg: "Submitted!", isError: false });
       else setParentSubmitStatus({ msg: "Submission failed. Try again.", isError: true });
       setTimeout(function() { setParentSubmitStatus(null); }, 3000);
@@ -2996,7 +3164,7 @@ function VolleyballTracker() {
   async function handleGenerateMP4() {
     if (isEncoding) return;
 
-    var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, state.setNumberOffset || 0);
+    var entries = buildOverlayEntries(state.pointLog, state.syncTimestamp, state.teamA, state.teamB, state.matchTitle, state.setNumberOffset || 0, state.parentHighlights || []);
     if (entries.length === 0) {
       window.alert("No sync point set or no points recorded.");
       return;
@@ -3438,22 +3606,33 @@ function VolleyballTracker() {
                 .map(function(h) {
                   var offsetMs = state.syncTimestamp ? (h.clientTimestamp - state.syncTimestamp) : null;
                   var offsetTxt = (offsetMs != null && offsetMs >= 0) ? msToChapterTime(offsetMs) : "\u2014";
+                  var snap = h.snapshot;
+                  var setLbl = snap ? formatSetLabel(snap.setNum, state.setNumberOffset || 0) : null;
+                  var tagLabel = h.tag ? (TECH_HIGHLIGHT_TAG_LABELS[h.tag] || h.tag) : null;
                   return (
                     <div className={"parent-entry" + (h.deleted ? " parent-entry-deleted" : "")} key={h.id}>
-                      <div className="parent-entry-meta">
-                        {formatClockTime(h.clientTimestamp)} \u00B7 video {offsetTxt}
+                      <div className="parent-entry-meta parent-entry-meta-row">
+                        <span>{formatClockTime(h.clientTimestamp)} \u00B7 video {offsetTxt}</span>
+                        {snap && (
+                          <span className="parent-entry-score">{setLbl} {snap.pointsA}\u2013{snap.pointsB}</span>
+                        )}
+                        {tagLabel && (
+                          <span className="parent-entry-tag">{"\u2605 " + tagLabel}</span>
+                        )}
                         {!h.deleted && (
                           <button
                             className="parent-entry-delete-btn"
                             onClick={function() { handleDeleteParentHighlight(h.id); }}
-                            style={{ float: "right" }}
+                            style={{ marginLeft: "auto" }}
                           >Delete</button>
                         )}
                       </div>
-                      <div>
-                        {h.name && <span className="parent-entry-name">{h.name}: </span>}
-                        <span className="parent-entry-note">{h.note}</span>
-                      </div>
+                      {(h.name || h.note) && (
+                        <div>
+                          {h.name && <span className="parent-entry-name">{h.name}{h.note ? ": " : ""}</span>}
+                          {h.note && <span className="parent-entry-note">{h.note}</span>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -40,6 +40,17 @@
             "deleted": {
               ".write": "auth != null && root.child('matches').child($matchId).child('meta/scorekeeperUid').val() === auth.uid",
               ".validate": "newData.isBoolean()"
+            },
+            "tag":   { ".validate": "newData.val() === null || (newData.isString() && newData.val().length <= 16)" },
+            "quick": { ".validate": "newData.isBoolean()" },
+            "snapshot": {
+              ".validate": "newData.val() === null || newData.hasChildren()",
+              "pointsA": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+              "pointsB": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+              "setsA":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+              "setsB":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+              "setNum":  { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99" },
+              "$other":  { ".validate": false }
             }
           }
         }
