@@ -2534,6 +2534,10 @@ function VolleyballTracker() {
   const [highlightPrompt, setHighlightPrompt] = useState(null);
   // Shape: { index: number, timer: timeoutId, phase: 'prompt' | 'input' | 'confirmed' } | null
 
+  // Inline note editor for the log (scorekeeper only)
+  const [noteEditIdx, setNoteEditIdx] = useState(null);
+  const [noteEditVal, setNoteEditVal] = useState("");
+
   // Live Share state
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [liveError, setLiveError] = useState(null);
@@ -2779,6 +2783,11 @@ function VolleyballTracker() {
       return next;
     });
   }, []);
+
+  const saveNoteEdit = useCallback(function(logIndex, rawVal) {
+    markHighlightWithNote(logIndex, rawVal.trim() || null);
+    setNoteEditIdx(null);
+  }, [markHighlightWithNote]);
 
   const handleStartShare = useCallback(function() {
     if (!isFirebaseConfigured()) {
@@ -3393,8 +3402,24 @@ function VolleyballTracker() {
                     <span className="log-arrow" style={{ color: p.team === "A" ? "var(--team-a)" : "var(--team-b)" }}>
                       {p.correction ? "\u2193" : "\u25CF"} {p.team === "A" ? state.teamA : state.teamB}{p.correction ? " (adj)" : ""}
                     </span>
-                    {p.highlight && p.highlightNote && (
-                      <span className="log-hl-note">({p.highlightNote})</span>
+                    {p.highlight && (
+                      noteEditIdx === key
+                        ? <input
+                            autoFocus
+                            value={noteEditVal}
+                            onChange={function(e) { setNoteEditVal(e.target.value); }}
+                            onBlur={function(e) { saveNoteEdit(key, e.target.value); }}
+                            onKeyDown={function(e) {
+                              if (e.key === "Enter") { e.preventDefault(); saveNoteEdit(key, e.target.value); }
+                              else if (e.key === "Escape") { e.preventDefault(); setNoteEditIdx(null); }
+                            }}
+                            style={{ fontFamily: "var(--font-mono)", fontSize: 12, background: "var(--surface2)", color: "var(--text)", border: "none", borderRadius: 3, padding: "1px 4px", width: 120 }}
+                          />
+                        : <span
+                            className="log-hl-note"
+                            onClick={function(e) { e.stopPropagation(); setNoteEditIdx(key); setNoteEditVal(p.highlightNote || ""); }}
+                            style={{ cursor: "pointer" }}
+                          >{p.highlightNote ? "(" + p.highlightNote + ")" : <span style={{ opacity: 0.45 }}>add note</span>}</span>
                     )}
                   </div>
                 );
