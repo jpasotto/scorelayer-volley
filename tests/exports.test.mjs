@@ -157,6 +157,75 @@ test("msToChapterTime: returns MM:SS below 1h, H:MM:SS at/above 1h, with the bou
   assert.equal(helpers.msToChapterTime(3_661_000), "1:01:01");
 });
 
+// ---------- buildOverlayEntries ----------
+
+test("buildOverlayEntries: regression #35 — rally-before-highlight not dropped; ★ propagated back", () => {
+  // 5-point pointLog, set 1, synced at a real epoch timestamp
+  const sync = 1700000000000; // non-zero so the falsy guard passes
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 300000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: true,  highlightNote: "Great play" },
+    { timestamp: sync + 400000, setNum: 1, pointsA: 4, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 500000, setNum: 1, pointsA: 5, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+
+  // All entries must pass end > start (none collapsed/dropped)
+  entries.forEach((e, i) => {
+    assert.ok(e.end > e.start, `entry ${i} has end <= start (collapsed): start=${e.start} end=${e.end}`);
+  });
+
+  // The entry showing "2 : 0" (pre-rally score) should have highlight: true
+  const score2 = entries.find(e => e.score && e.score.includes("2 : 0"));
+  assert.ok(score2, "expected an entry with score 2 : 0");
+  assert.equal(score2.highlight, true, "entry with 2 : 0 should have highlight: true (★ propagated back)");
+
+  // The entry showing "3 : 0" (scoring point) should also have highlight: true
+  const score3 = entries.find(e => e.score && e.score.includes("3 : 0"));
+  assert.ok(score3, "expected an entry with score 3 : 0");
+  assert.equal(score3.highlight, true, "entry with 3 : 0 should have highlight: true");
+
+  // No gap: score2's end should equal score3's start
+  assert.equal(score2.end, score3.start, "no gap: 2:0 entry end must equal 3:0 entry start");
+});
+
+test("buildOverlayEntries: non-highlight pointLog → all score entries have highlight: false", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 300000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+  const scoreEntries = entries.filter(e => e.type === 'score');
+  assert.equal(scoreEntries.length, 3, "expected 3 score entries");
+  scoreEntries.forEach((e, i) => {
+    assert.equal(e.highlight, false, `entry ${i} should have highlight: false`);
+  });
+});
+
+test("buildOverlayEntries: set-boundary guard — highlight on first point of set 2 does not propagate to last entry of set 1", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 100000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    // First point of set 2 with highlight — must NOT back-propagate to set 1
+    { timestamp: sync + 300000, setNum: 2, pointsA: 1, pointsB: 0, setsA: 1, setsB: 0, highlight: true,  highlightNote: "Ace" },
+    { timestamp: sync + 400000, setNum: 2, pointsA: 2, pointsB: 0, setsA: 1, setsB: 0, highlight: false, highlightNote: null },
+  ];
+
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+
+  // Find the last set-1 score entry
+  const set1Entries = entries.filter(e => e.type === 'score' && e.set_info && e.set_info.includes("1"));
+  assert.ok(set1Entries.length > 0, "expected at least one set-1 score entry");
+  const lastSet1 = set1Entries[set1Entries.length - 1];
+  assert.equal(lastSet1.highlight, false, "last set-1 entry must keep highlight: false (cross-set propagation blocked)");
+});
+
 // ---------- helpers ----------
 
 function parseSrtTime(s) {

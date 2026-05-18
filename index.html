@@ -813,6 +813,105 @@ function generateHighlightsSRT(pointLog, syncTimestamp, teamA, teamB, setNumberO
   }
   return lines.join("\n");
 }
+
+// --- Build entries array from pointLog (shared by MP4 generator and chroma script) ---
+function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
+  if (!syncTimestamp || pointLog.length === 0) return [];
+  var title = (matchTitle || "").trim();
+  var QR_LEAD  = 20;
+  var QR_TRAIL = 40;
+  var MIN_GAP  = QR_LEAD + QR_TRAIL + 1; // 61s guard
+
+  var entries = [];
+
+  for (var i = 0; i < pointLog.length; i++) {
+    var p = pointLog[i];
+    var startSec = (p.timestamp - syncTimestamp) / 1000;
+    if (startSec < 0) continue;
+    // For highlights, propagate the ★ visual back to the previous point's
+    // score entry (same set) so the rally play is also marked. Never shift
+    // startSec or truncate the previous entry — the score shown during the
+    // rally must stay the pre-rally score.
+    if (p.highlight && entries.length > 0 && i > 0 && pointLog[i - 1].setNum === p.setNum) {
+      var prevEntry = entries[entries.length - 1];
+      if (prevEntry.type === 'score' && !prevEntry.blank) {
+        prevEntry.highlight = true;
+        prevEntry.highlightNote = p.highlightNote || prevEntry.highlightNote || null;
+      }
+    }
+    var rawEndSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
+    var endSec = rawEndSec;
+
+    var setsA = p.setsA || 0;
+    var setsB = p.setsB || 0;
+
+    var isSetEnd = p.setWon === true && i < pointLog.length - 1;
+    var gapSec   = rawEndSec - startSec;
+
+    if (isSetEnd && gapSec >= MIN_GAP) {
+      var newSetsA = setsA + (p.pointsA > p.pointsB ? 1 : 0);
+      var newSetsB = setsB + (p.pointsB > p.pointsA ? 1 : 0);
+      var qrStart  = startSec + QR_LEAD;
+      var qrEnd    = rawEndSec - QR_TRAIL;
+
+      entries.push({
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(qrStart  * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + setsA + ':' + setsB,
+        highlight: false, highlightNote: null, highlightTag: null
+      });
+
+      entries.push({
+        type: 'qr',
+        start: Math.round(qrStart * 1000) / 1000,
+        end:   Math.round(qrEnd   * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null, highlightTag: null
+      });
+
+      entries.push({
+        type: 'reset',
+        start: Math.round(qrEnd  * 1000) / 1000,
+        end:   Math.round(rawEndSec * 1000) / 1000,
+        score:      teamA + '  0 : 0  ' + teamB,
+        set_info:   formatSetLabel(p.setNum + 1, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
+        highlight: false, highlightNote: null, highlightTag: null
+      });
+
+    } else {
+      var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
+      endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
+      entries.push({
+        type: 'score',
+        start: Math.round(startSec * 1000) / 1000,
+        end:   Math.round(endSec   * 1000) / 1000,
+        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
+        set_info:   formatSetLabel(p.setNum, setNumberOffset),
+        title:      title,
+        sets_score: 'Sets ' + setsA + ':' + setsB,
+        highlight: p.highlight || false,
+        highlightNote: p.highlightNote || null
+      });
+      if (isSetBreak) {
+        entries.push({
+          start: Math.round(endSec * 1000) / 1000,
+          end:   Math.round(rawEndSec * 1000) / 1000,
+          blank: true
+        });
+      }
+    }
+  }
+  return entries.filter(function(e) { return e.end > e.start; });
+}
 // EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
 // --- Chroma Key shell script + Python frame renderer ---
@@ -1315,105 +1414,6 @@ function generateReadme(teamA, teamB) {
   ].join("\n");
 }
 
-
-// --- Build entries array from pointLog (shared by MP4 generator and chroma script) ---
-function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, setNumberOffset) {
-  if (!syncTimestamp || pointLog.length === 0) return [];
-  var title = (matchTitle || "").trim();
-  var QR_LEAD  = 20;
-  var QR_TRAIL = 40;
-  var MIN_GAP  = QR_LEAD + QR_TRAIL + 1; // 61s guard
-
-  var entries = [];
-
-  for (var i = 0; i < pointLog.length; i++) {
-    var p = pointLog[i];
-    var startSec = (p.timestamp - syncTimestamp) / 1000;
-    if (startSec < 0) continue;
-    // For highlights, extend start back to rally beginning (prev point's timestamp), same set only
-    if (p.highlight && i > 0 && pointLog[i - 1].setNum === p.setNum) {
-      var rallyStartSec = (pointLog[i - 1].timestamp - syncTimestamp) / 1000;
-      if (rallyStartSec >= 0) {
-        startSec = rallyStartSec;
-        // Truncate previous entry's end to avoid overlapping timestamps in VideoEncoder
-        if (entries.length > 0 && !entries[entries.length - 1].blank) {
-          entries[entries.length - 1].end = Math.round(startSec * 1000) / 1000;
-        }
-      }
-    }
-    var rawEndSec = i < pointLog.length - 1 ? (pointLog[i + 1].timestamp - syncTimestamp) / 1000 : startSec + 10;
-    var endSec = rawEndSec;
-
-    var setsA = p.setsA || 0;
-    var setsB = p.setsB || 0;
-
-    var isSetEnd = p.setWon === true && i < pointLog.length - 1;
-    var gapSec   = rawEndSec - startSec;
-
-    if (isSetEnd && gapSec >= MIN_GAP) {
-      var newSetsA = setsA + (p.pointsA > p.pointsB ? 1 : 0);
-      var newSetsB = setsB + (p.pointsB > p.pointsA ? 1 : 0);
-      var qrStart  = startSec + QR_LEAD;
-      var qrEnd    = rawEndSec - QR_TRAIL;
-
-      entries.push({
-        type: 'score',
-        start: Math.round(startSec * 1000) / 1000,
-        end:   Math.round(qrStart  * 1000) / 1000,
-        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
-        set_info:   formatSetLabel(p.setNum, setNumberOffset),
-        title:      title,
-        sets_score: 'Sets ' + setsA + ':' + setsB,
-        highlight: false, highlightNote: null, highlightTag: null
-      });
-
-      entries.push({
-        type: 'qr',
-        start: Math.round(qrStart * 1000) / 1000,
-        end:   Math.round(qrEnd   * 1000) / 1000,
-        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
-        set_info:   formatSetLabel(p.setNum, setNumberOffset),
-        title:      title,
-        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
-        highlight: false, highlightNote: null, highlightTag: null
-      });
-
-      entries.push({
-        type: 'reset',
-        start: Math.round(qrEnd  * 1000) / 1000,
-        end:   Math.round(rawEndSec * 1000) / 1000,
-        score:      teamA + '  0 : 0  ' + teamB,
-        set_info:   formatSetLabel(p.setNum + 1, setNumberOffset),
-        title:      title,
-        sets_score: 'Sets ' + newSetsA + ':' + newSetsB,
-        highlight: false, highlightNote: null, highlightTag: null
-      });
-
-    } else {
-      var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
-      endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-      entries.push({
-        type: 'score',
-        start: Math.round(startSec * 1000) / 1000,
-        end:   Math.round(endSec   * 1000) / 1000,
-        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
-        set_info:   formatSetLabel(p.setNum, setNumberOffset),
-        title:      title,
-        sets_score: 'Sets ' + setsA + ':' + setsB,
-        highlight: p.highlight || false,
-        highlightNote: p.highlightNote || null
-      });
-      if (isSetBreak) {
-        entries.push({
-          start: Math.round(endSec * 1000) / 1000,
-          end:   Math.round(rawEndSec * 1000) / 1000,
-          blank: true
-        });
-      }
-    }
-  }
-  return entries.filter(function(e) { return e.end > e.start; });
-}
 
 
 // --- CSV parser (for import/recovery) ---
