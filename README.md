@@ -2,6 +2,7 @@
 
 A mobile-first volleyball score tracker with timestamped point logging, multi-format export for Final Cut Pro / iMovie / YouTube, and **Live Share** so parents in the bleachers can see the live score and submit highlights straight from their phones.
 
+<!-- MANUAL_BEGIN -->
 ## Features
 
 - **Live scoring** — Tap + / − to track points with set/match auto-detection
@@ -41,6 +42,8 @@ With Firebase configured, a scorekeeper can publish the match live so spectators
 **Where parent highlights appear in exports:** YouTube chapters, CSV, Highlights SRT, **and** the in-video score overlay all merge accepted (non-deleted) parent submissions alongside the scorekeeper's own `★` highlights. Each parent highlight flips the `★` on the overlay entry whose timestamp it falls inside, and appends `[tag · name · note]` to that entry's highlight note.
 
 **Score snapshot:** the live score is frozen at submission time, so the in-video overlay and the spectator feed can show "S2 14–12" even if the scorekeeper corrects the score later.
+
+<!-- MANUAL_END -->
 
 ## Firebase Setup
 
