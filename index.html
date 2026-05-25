@@ -237,6 +237,75 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .spectator-prev-set-score.a-won .winner { color: var(--team-a); }
   .spectator-prev-set-score.b-won .winner { color: var(--team-b); }
   .spectator-prev-set-dash { margin: 0 6px; color: var(--text-dim); }
+
+  /* ===== Display / TV Mode ===== */
+  .display-screen { width: 100vw; height: 100dvh; display: grid; grid-template-rows: 60px 1fr 72px; background: var(--bg); overflow: hidden; }
+  .display-header { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--surface2); }
+  .display-header-title { font-family: var(--font-display); font-size: clamp(14px, 2vw, 22px); font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); }
+  .display-header-right { display: flex; align-items: center; gap: 16px; }
+  .display-set-label { font-size: clamp(12px, 1.4vw, 16px); font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--text); }
+  .display-live-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--success); }
+  .display-court { display: grid; grid-template-columns: 1fr 4px 1fr; height: 100%; }
+  .display-divider { background: var(--surface2); }
+  .display-team { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 32px; position: relative; overflow: hidden; }
+  .display-team.a { background: linear-gradient(135deg, rgba(59,130,246,0.10) 0%, transparent 55%); }
+  .display-team.b { background: linear-gradient(225deg, rgba(239,68,68,0.10) 0%, transparent 55%); }
+  .display-team-name { font-family: var(--font-display); font-size: clamp(22px, 3.5vw, 52px); font-weight: 700; letter-spacing: 5px; text-transform: uppercase; text-align: center; }
+  .display-team.a .display-team-name { color: var(--team-a); }
+  .display-team.b .display-team-name { color: var(--team-b); }
+  .display-score { font-family: var(--font-display); font-size: clamp(90px, 19vw, 230px); font-weight: 700; line-height: 1; }
+  .display-team.a .display-score { color: var(--team-a); text-shadow: 0 0 80px rgba(59,130,246,0.35); }
+  .display-team.b .display-score { color: var(--team-b); text-shadow: 0 0 80px rgba(239,68,68,0.35); }
+  .display-sets { display: flex; gap: 10px; }
+  .display-set-pip { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; }
+  .display-set-pip.won { background: currentColor; }
+  .display-team.a .display-sets { color: var(--team-a); }
+  .display-team.b .display-sets { color: var(--team-b); }
+  .display-badge { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(245,158,11,0.18); color: var(--warning); border: 1px solid rgba(245,158,11,0.5); border-radius: 8px; padding: 5px 18px; font-family: var(--font-display); font-size: clamp(11px, 1.4vw, 18px); font-weight: 700; letter-spacing: 3px; text-transform: uppercase; animation: pulse 1.2s ease-in-out infinite; white-space: nowrap; }
+  .display-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-top: 1px solid var(--surface2); }
+  .display-footer-brand { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase; color: var(--text-dim); }
+  .display-footer-qr { display: flex; align-items: center; gap: 12px; }
+  .display-footer-qr img { width: 48px; height: 48px; border-radius: 4px; background: white; padding: 2px; }
+  .display-footer-qr-label { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; max-width: 120px; line-height: 1.3; }
+
+  /* Pairing screen */
+  .display-pairing { width: 100vw; height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; background: var(--bg); padding: 24px; }
+  .display-pairing-brand { font-family: var(--font-display); font-size: 14px; font-weight: 600; letter-spacing: 5px; text-transform: uppercase; color: var(--text-dim); }
+  .display-pairing-inner { display: flex; align-items: center; gap: clamp(32px, 6vw, 80px); flex-wrap: wrap; justify-content: center; }
+  .display-pairing-qr { width: clamp(180px, 22vw, 260px); height: clamp(180px, 22vw, 260px); border-radius: 12px; background: white; padding: 8px; }
+  .display-pairing-info { display: flex; flex-direction: column; gap: 14px; max-width: 340px; }
+  .display-pairing-title { font-family: var(--font-display); font-size: clamp(22px, 3vw, 34px); font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: var(--text); }
+  .display-pairing-steps { display: flex; flex-direction: column; gap: 10px; }
+  .display-pairing-step { font-size: clamp(13px, 1.5vw, 17px); color: var(--text-dim); }
+  .display-pairing-id-row { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .display-pairing-id-label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+  .display-pairing-id { font-family: var(--font-mono); font-size: clamp(22px, 3vw, 36px); font-weight: 600; letter-spacing: 8px; color: var(--accent); }
+
+  /* Match-over display */
+  .display-matchover { width: 100vw; height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--bg); padding: 32px; text-align: center; }
+  .display-matchover-over { font-family: var(--font-display); font-size: clamp(16px, 2.5vw, 28px); font-weight: 600; letter-spacing: 6px; text-transform: uppercase; color: var(--text-dim); }
+  .display-matchover-winner { font-family: var(--font-display); font-size: clamp(36px, 7vw, 96px); font-weight: 700; letter-spacing: 4px; text-transform: uppercase; }
+  .display-matchover-record { font-family: var(--font-display); font-size: clamp(28px, 4vw, 56px); font-weight: 700; color: var(--text-dim); }
+  .display-matchover-sets { font-size: clamp(12px, 1.5vw, 18px); color: var(--text-dim); font-family: var(--font-mono); margin-top: 8px; }
+  .display-matchover-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 24px; }
+  .display-matchover-qr img { width: 90px; height: 90px; border-radius: 8px; background: white; padding: 4px; }
+  .display-matchover-qr-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* Pair confirmation / scorekeeper link modal */
+  .pair-confirm-screen { width: 100vw; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--bg); padding: 24px; }
+  .pair-confirm-card { background: var(--surface); border-radius: 16px; padding: 32px 28px; max-width: 380px; width: 100%; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+  .pair-confirm-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; text-align: center; }
+  .pair-confirm-id { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: 8px; color: var(--accent); text-align: center; }
+  .pair-confirm-hint { font-size: 13px; color: var(--text-dim); text-align: center; line-height: 1.5; }
+  /* Link display modal (scorekeeper 📺 button) */
+  .pair-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 200; }
+  .pair-modal { background: var(--surface); border-radius: 16px; padding: 24px 22px; max-width: 340px; width: 90%; display: flex; flex-direction: column; gap: 14px; }
+  .pair-modal-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; text-align: center; }
+  .pair-modal-hint { font-size: 12px; color: var(--text-dim); text-align: center; line-height: 1.5; }
+  .pair-modal-row { display: flex; gap: 8px; }
+  .pair-modal input { flex: 1; background: var(--surface2); border: 1px solid var(--surface2); border-radius: 8px; padding: 10px 12px; color: var(--text); font-family: var(--font-mono); font-size: 16px; letter-spacing: 4px; text-transform: uppercase; min-width: 0; }
+  .pair-modal input::placeholder { letter-spacing: 1px; font-size: 12px; color: var(--text-dim); }
+  .pair-modal-linked { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--success); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -435,7 +504,7 @@ function createInitialState() {
   };
 }
 
-var SCREEN = { SETUP: "setup", MATCH: "match", CSV_IMPORT: "csv_import", SPECTATOR: "spectator" };
+var SCREEN = { SETUP: "setup", MATCH: "match", CSV_IMPORT: "csv_import", SPECTATOR: "spectator", DISPLAY: "display", PAIR: "pair" };
 
 // --- LocalStorage autosave ---
 function autosaveState(state) {
@@ -976,6 +1045,42 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
   }
 
   return entries.filter(function(e) { return e.end > e.start; });
+}
+// --- Display Mode Helpers (pure, tested by tests/display.test.mjs) ---
+function getOrCreateDisplayId(storage) {
+  var st = storage || (typeof localStorage !== "undefined" ? localStorage : null);
+  if (!st) return null;
+  var key = "scorelayer_display_id";
+  var id = st.getItem(key);
+  if (!id || !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(id)) {
+    id = Math.random().toString(36).slice(2, 6).toUpperCase() + "-" +
+         Math.random().toString(36).slice(2, 6).toUpperCase();
+    st.setItem(key, id);
+  }
+  return id;
+}
+
+function formatDisplayId(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  var upper = raw.trim().toUpperCase().replace(/\s/g, "");
+  if (/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(upper)) return upper;
+  return null;
+}
+
+function parseDisplayParams(search) {
+  var params = new URLSearchParams(search || "");
+  if (params.has("tv")) {
+    var tvId = params.get("tv") || null;
+    return { screen: SCREEN.DISPLAY, matchId: null, displayId: tvId && formatDisplayId(tvId) ? formatDisplayId(tvId) : null, pairId: null };
+  }
+  if (params.has("pair")) {
+    return { screen: SCREEN.PAIR, matchId: null, displayId: null, pairId: params.get("pair") || null };
+  }
+  var m = params.get("m");
+  if (m) {
+    return { screen: SCREEN.SPECTATOR, matchId: m, displayId: null, pairId: null };
+  }
+  return { screen: SCREEN.SETUP, matchId: null, displayId: null, pairId: null };
 }
 // EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
@@ -2328,6 +2433,45 @@ var sync = (function() {
       .catch(function(err) { console.warn("sync.deleteParentHighlight failed:", err); return false; });
   }
 
+  function linkDisplay(displayId, matchId, teamA, teamB) {
+    if (!FIREBASE_READY || !displayId || !matchId) return Promise.resolve(false);
+    var uid = firebase.auth().currentUser && firebase.auth().currentUser.uid;
+    if (!uid) return Promise.resolve(false);
+    return dbRef("displays/" + displayId).set({
+      matchId: matchId,
+      teamA: teamA || "",
+      teamB: teamB || "",
+      linkedAt: firebase.database.ServerValue.TIMESTAMP,
+      scorekeeperUid: uid
+    }).then(function() { return true; })
+      .catch(function(err) { console.warn("sync.linkDisplay failed:", err); return false; });
+  }
+
+  function unlinkDisplay(displayId) {
+    if (!FIREBASE_READY || !displayId) return Promise.resolve(false);
+    return dbRef("displays/" + displayId).remove()
+      .then(function() { return true; })
+      .catch(function(err) { console.warn("sync.unlinkDisplay failed:", err); return false; });
+  }
+
+  function subscribeDisplay(displayId, callback) {
+    if (!FIREBASE_READY || !displayId) return function() {};
+    var ref = dbRef("displays/" + displayId);
+    var handler = ref.on("value", function(snap) {
+      callback(snap.val());
+    }, function(err) {
+      console.warn("sync.subscribeDisplay error:", err);
+    });
+    return function unsubscribe() { ref.off("value", handler); };
+  }
+
+  function displayPairUrl(displayId) {
+    var u = new URL(window.location.href);
+    u.search = "?pair=" + encodeURIComponent(displayId);
+    u.hash = "";
+    return u.toString();
+  }
+
   function shareUrl(matchId) {
     var u = new URL(window.location.href);
     u.search = "?m=" + encodeURIComponent(matchId);
@@ -2347,6 +2491,10 @@ var sync = (function() {
     subscribeMatch: subscribeMatch,
     submitParentHighlight: submitParentHighlight,
     deleteParentHighlight: deleteParentHighlight,
+    linkDisplay: linkDisplay,
+    unlinkDisplay: unlinkDisplay,
+    subscribeDisplay: subscribeDisplay,
+    displayPairUrl: displayPairUrl,
     shareUrl: shareUrl,
     qrUrl: qrUrl,
     buildMetaPatch: buildMetaPatch,
@@ -2600,6 +2748,325 @@ function SpectatorView(props) {
   );
 }
 
+// ===================== DISPLAY / TV COMPONENTS =====================
+
+function DisplayPairingScreen({ displayId }) {
+  var pairUrl = sync.displayPairUrl(displayId);
+  var qrSrc = sync.qrUrl(pairUrl);
+  return (
+    <div className="display-pairing">
+      <div className="display-pairing-brand">⬡ SCORELAYER</div>
+      <div className="display-pairing-inner">
+        <img className="display-pairing-qr" src={qrSrc} alt="Pairing QR code" />
+        <div className="display-pairing-info">
+          <div className="display-pairing-title">Ready to connect</div>
+          <div className="display-pairing-steps">
+            <div className="display-pairing-step">① Open Scorelayer on your phone</div>
+            <div className="display-pairing-step">② Start scoring your match</div>
+            <div className="display-pairing-step">③ Tap <strong>📺 Display</strong> and enter the ID below</div>
+          </div>
+          <div className="display-pairing-id-row">
+            <div className="display-pairing-id-label">Display ID</div>
+            <div className="display-pairing-id">{displayId}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DisplayLiveScreen({ state, matchId }) {
+  var pA = state.pointsA || 0, pB = state.pointsB || 0;
+  var sA = state.setsA || 0, sB = state.setsB || 0;
+  var target = state.extraSetMode ? POINTS_TO_WIN_TIEBREAK : POINTS_TO_WIN_SET;
+  var aWouldWinSet = (pA + 1 >= target) && ((pA + 1) - pB >= MIN_LEAD);
+  var bWouldWinSet = (pB + 1 >= target) && ((pB + 1) - pA >= MIN_LEAD);
+  var isSetPoint = aWouldWinSet || bWouldWinSet;
+  var isMatchPoint = (aWouldWinSet && sA + 1 >= SETS_TO_WIN_MATCH) ||
+                     (bWouldWinSet && sB + 1 >= SETS_TO_WIN_MATCH);
+  var setNum = (state.setNumberOffset || 0) + (state.currentSet || 1);
+  var parentUrl = matchId ? sync.shareUrl(matchId) : null;
+  var parentQrSrc = parentUrl ? sync.qrUrl(parentUrl) : null;
+  return (
+    <div className="display-screen">
+      <div className="display-header">
+        <div className="display-header-title">
+          {state.teamA || "Team A"} vs {state.teamB || "Team B"}
+        </div>
+        <div className="display-header-right">
+          <div className="display-set-label">Set {setNum}</div>
+          <div className="display-live-badge">
+            <div style={{ width: 8, height: 8, background: "var(--success)", borderRadius: "50%", animation: "pulse 1.5s ease-in-out infinite" }} />
+            LIVE
+          </div>
+        </div>
+      </div>
+
+      <div className="display-court">
+        <div className="display-team a">
+          {aWouldWinSet && (
+            <div className="display-badge">{isMatchPoint ? "Match Point" : "Set Point"}</div>
+          )}
+          <div className="display-team-name">{state.teamA || "Team A"}</div>
+          <div className="display-score">{pA}</div>
+          <div className="display-sets">
+            {Array.from({ length: SETS_TO_WIN_MATCH }).map(function(_, i) {
+              return <div key={i} className={"display-set-pip" + (i < sA ? " won" : "")} />;
+            })}
+          </div>
+        </div>
+
+        <div className="display-divider" />
+
+        <div className="display-team b">
+          {bWouldWinSet && (
+            <div className="display-badge">{isMatchPoint ? "Match Point" : "Set Point"}</div>
+          )}
+          <div className="display-team-name">{state.teamB || "Team B"}</div>
+          <div className="display-score">{pB}</div>
+          <div className="display-sets">
+            {Array.from({ length: SETS_TO_WIN_MATCH }).map(function(_, i) {
+              return <div key={i} className={"display-set-pip" + (i < sB ? " won" : "")} />;
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="display-footer">
+        <div className="display-footer-brand">scorelayer</div>
+        {parentQrSrc && (
+          <div className="display-footer-qr">
+            <div className="display-footer-qr-label">Follow on your phone</div>
+            <img src={parentQrSrc} alt="Parent QR" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DisplayMatchOverScreen({ state, matchId }) {
+  var aWon = (state.setsA || 0) > (state.setsB || 0);
+  var winner = aWon ? (state.teamA || "Team A") : (state.teamB || "Team B");
+  var winnerColor = aWon ? "var(--team-a)" : "var(--team-b)";
+  var wSets = Math.max(state.setsA || 0, state.setsB || 0);
+  var lSets = Math.min(state.setsA || 0, state.setsB || 0);
+  var parentUrl = matchId ? sync.shareUrl(matchId) : null;
+  var parentQrSrc = parentUrl ? sync.qrUrl(parentUrl) : null;
+  return (
+    <div className="display-matchover">
+      <div className="display-matchover-over">Match Over</div>
+      <div className="display-matchover-winner" style={{ color: winnerColor }}>🏆 {winner}</div>
+      <div className="display-matchover-record" style={{ color: winnerColor }}>{wSets}–{lSets}</div>
+      {parentQrSrc && (
+        <div className="display-matchover-qr">
+          <img src={parentQrSrc} alt="Highlights QR" />
+          <div className="display-matchover-qr-label">View match highlights</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DisplayView({ displayId }) {
+  const [displayData, setDisplayData] = useState(null);
+  const [matchState, setMatchState] = useState(null);
+  const currentMatchIdRef = useRef(null);
+  const unsubMatchRef = useRef(null);
+
+  useEffect(function() {
+    if (!displayId || !isFirebaseConfigured()) return;
+    var unsubDisplay = null;
+    var cancelled = false;
+    initFirebase().then(function() {
+      if (cancelled) return;
+      unsubDisplay = sync.subscribeDisplay(displayId, function(data) {
+        setDisplayData(data);
+        var newMatchId = data && data.matchId;
+        if (newMatchId && newMatchId !== currentMatchIdRef.current) {
+          if (unsubMatchRef.current) { unsubMatchRef.current(); unsubMatchRef.current = null; }
+          currentMatchIdRef.current = newMatchId;
+          var capturedData = data;
+          unsubMatchRef.current = sync.subscribeMatch(newMatchId, function(snap) {
+            if (!snap) return;
+            var meta = snap.meta || {};
+            setMatchState({
+              teamA: meta.teamA || (capturedData && capturedData.teamA) || "",
+              teamB: meta.teamB || (capturedData && capturedData.teamB) || "",
+              currentSet: meta.currentSet || 1,
+              setsA: meta.setsA || 0,
+              setsB: meta.setsB || 0,
+              pointsA: meta.pointsA || 0,
+              pointsB: meta.pointsB || 0,
+              matchStarted: !!meta.matchStarted,
+              matchOver: !!meta.matchOver,
+              extraSetMode: !!meta.extraSetMode,
+              setNumberOffset: meta.setNumberOffset || 0,
+            });
+          }, function(err) {
+            console.warn("Display: match subscription error", err);
+          });
+        }
+      });
+    });
+    return function() {
+      cancelled = true;
+      if (unsubDisplay) unsubDisplay();
+      if (unsubMatchRef.current) { unsubMatchRef.current(); unsubMatchRef.current = null; }
+    };
+  }, [displayId]);
+
+  if (matchState && matchState.matchOver) {
+    return <DisplayMatchOverScreen state={matchState} matchId={currentMatchIdRef.current} />;
+  }
+  if (matchState && matchState.matchStarted) {
+    return <DisplayLiveScreen state={matchState} matchId={currentMatchIdRef.current} />;
+  }
+  return <DisplayPairingScreen displayId={displayId} />;
+}
+
+function PairConfirmView({ pairId, onGoToApp }) {
+  const [status, setStatus] = useState("idle"); // idle | no-share | linking | done | error
+  const [matchInfo, setMatchInfo] = useState(null);
+
+  useEffect(function() {
+    var saved = loadAutosave();
+    if (saved && saved.matchStarted && saved.matchId) {
+      setMatchInfo(saved);
+    } else {
+      setStatus("no-share");
+    }
+  }, []);
+
+  function handleLink() {
+    if (!matchInfo || !matchInfo.matchId || !pairId) return;
+    setStatus("linking");
+    initFirebase().then(function() {
+      return sync.linkDisplay(pairId, matchInfo.matchId, matchInfo.teamA, matchInfo.teamB);
+    }).then(function(ok) {
+      setStatus(ok ? "done" : "error");
+    });
+  }
+
+  return (
+    <div className="pair-confirm-screen">
+      <div className="pair-confirm-card">
+        <div className="pair-confirm-title">Connect Display</div>
+        <div className="pair-confirm-id">{pairId}</div>
+        {status === "done" && (
+          <div style={{ color: "var(--success)", textAlign: "center", fontSize: 14, fontWeight: 600 }}>
+            ✓ Display connected! Your TV will update shortly.
+          </div>
+        )}
+        {status === "error" && (
+          <div style={{ color: "var(--danger)", fontSize: 12, textAlign: "center" }}>
+            Connection failed. Make sure Firebase is configured.
+          </div>
+        )}
+        {(status === "idle" || status === "linking") && matchInfo && (
+          <>
+            <div className="pair-confirm-hint">
+              Link this display to your active match:
+              <br /><strong>{matchInfo.teamA || "Team A"} vs {matchInfo.teamB || "Team B"}</strong>
+            </div>
+            <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleLink} disabled={status === "linking"}>
+              {status === "linking" ? "Connecting…" : "Connect to this match"}
+            </button>
+          </>
+        )}
+        {status === "no-share" && (
+          <div className="pair-confirm-hint">
+            No active shared match found. Start a match in Scorelayer, tap <strong>Share live</strong>, then tap <strong>📺 Display</strong> and enter this ID.
+          </div>
+        )}
+        {onGoToApp && (
+          <button className="btn btn-small" style={{ marginTop: 8 }} onClick={onGoToApp}>← Open Scorelayer</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PairModal({ state, onClose, onLinked }) {
+  const [inputId, setInputId] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | linking | done | error | invalid
+  const [linkedId, setLinkedId] = useState(null);
+
+  function handleLink() {
+    var normalized = formatDisplayId(inputId);
+    if (!normalized) { setStatus("invalid"); return; }
+    if (!state.matchId || !state.isShared) {
+      setStatus("error");
+      return;
+    }
+    setStatus("linking");
+    sync.linkDisplay(normalized, state.matchId, state.teamA, state.teamB).then(function(ok) {
+      if (ok) {
+        setLinkedId(normalized);
+        setStatus("done");
+        if (onLinked) onLinked(normalized);
+      } else {
+        setStatus("error");
+      }
+    });
+  }
+
+  function handleUnlink() {
+    if (!linkedId) return;
+    sync.unlinkDisplay(linkedId).then(function() {
+      setLinkedId(null);
+      setStatus("idle");
+      setInputId("");
+      if (onLinked) onLinked(null);
+    });
+  }
+
+  return (
+    <div className="pair-modal-overlay" onClick={onClose}>
+      <div className="pair-modal" onClick={function(e) { e.stopPropagation(); }}>
+        <div className="pair-modal-title">📺 Link Display</div>
+        {status === "done" ? (
+          <>
+            <div className="pair-modal-linked">✓ Display {linkedId} connected</div>
+            <div className="pair-modal-hint">Your TV should now show the live score.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-small" style={{ flex: 1 }} onClick={handleUnlink}>Unlink</button>
+              <button className="btn btn-small" style={{ flex: 1 }} onClick={onClose}>Close</button>
+            </div>
+          </>
+        ) : !state.isShared ? (
+          <>
+            <div className="pair-modal-hint">You need to start <strong>Live Share</strong> before connecting a display. Tap <em>Close</em>, then tap <em>Share live</em> first.</div>
+            <button className="btn btn-small" onClick={onClose}>Close</button>
+          </>
+        ) : (
+          <>
+            <div className="pair-modal-hint">Enter the Display ID shown on your TV or iPad (e.g.&nbsp;<strong>ABCD-1234</strong>).</div>
+            <div className="pair-modal-row">
+              <input
+                type="text"
+                placeholder="XXXX-XXXX"
+                value={inputId}
+                maxLength={9}
+                onChange={function(e) { setInputId(e.target.value.toUpperCase()); setStatus("idle"); }}
+                onKeyDown={function(e) { if (e.key === "Enter") handleLink(); }}
+              />
+              <button className="btn btn-primary" onClick={handleLink} disabled={status === "linking"}>
+                {status === "linking" ? "…" : "Link"}
+              </button>
+            </div>
+            {status === "invalid" && <div style={{ color: "var(--danger)", fontSize: 12 }}>Enter a valid ID like ABCD-1234</div>}
+            {status === "error" && <div style={{ color: "var(--danger)", fontSize: 12 }}>Failed to connect. Try again.</div>}
+            <button className="btn btn-small" onClick={onClose}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===================== END DISPLAY COMPONENTS =====================
+
 function ShareModalView(props) {
   const state = props.state;
   const [copyFeedback, setCopyFeedback] = useState("");
@@ -2709,16 +3176,40 @@ function VolleyballTracker() {
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
 
+  // Display / TV mode state
+  const [displayId, setDisplayId] = useState(null);       // TV's own displayId (DISPLAY screen)
+  const [pairTargetId, setPairTargetId] = useState(null); // displayId to link (PAIR screen)
+  const [pairModalOpen, setPairModalOpen] = useState(false);
+  const [linkedDisplayId, setLinkedDisplayId] = useState(null);
+
   const prevMatchOver = useRef(false);
 
-  // Mount: parse ?m= for spectator role; otherwise check for autosave.
+  // Mount: parse URL params for display/pair/spectator roles; otherwise check for autosave.
   useEffect(function() {
-    var params = new URLSearchParams(window.location.search);
-    var urlMatchId = params.get("m");
-    // Restore parent name from a previous spectator session.
-    var savedName = "";
-    try { savedName = localStorage.getItem(LOCALSTORAGE_PARENT_NAME_KEY) || ""; } catch (e) {}
-    if (urlMatchId) {
+    var parsed = parseDisplayParams(window.location.search);
+
+    // --- TV / Display mode ---
+    if (parsed.screen === SCREEN.DISPLAY) {
+      var id = parsed.displayId || getOrCreateDisplayId();
+      setDisplayId(id);
+      setScreen(SCREEN.DISPLAY);
+      if (isFirebaseConfigured()) initFirebase();
+      return;
+    }
+
+    // --- Pair confirmation (scorekeeper scanned TV QR) ---
+    if (parsed.screen === SCREEN.PAIR && parsed.pairId) {
+      setPairTargetId(parsed.pairId);
+      setScreen(SCREEN.PAIR);
+      if (isFirebaseConfigured()) initFirebase();
+      return;
+    }
+
+    // --- Spectator (parent) ---
+    if (parsed.screen === SCREEN.SPECTATOR && parsed.matchId) {
+      var urlMatchId = parsed.matchId;
+      var savedName = "";
+      try { savedName = localStorage.getItem(LOCALSTORAGE_PARENT_NAME_KEY) || ""; } catch (e) {}
       if (!isFirebaseConfigured()) {
         setLiveError("Live Share is unavailable in this build (no Firebase config). Please contact the scorekeeper for the score.");
         setScreen(SCREEN.SPECTATOR);
@@ -2730,6 +3221,8 @@ function VolleyballTracker() {
       initFirebase();
       return;
     }
+
+    // --- Normal app ---
     var saved = loadAutosave();
     if (saved && saved.matchStarted) {
       setConfirmAction("restore");
@@ -3422,6 +3915,16 @@ function VolleyballTracker() {
                 </button>
               )
             )}
+            {isFirebaseConfigured() && state.isShared && state.role === "scorekeeper" && (
+              <button
+                className="btn btn-small"
+                style={{ marginLeft: 4, background: linkedDisplayId ? "rgba(34,197,94,0.15)" : undefined, color: linkedDisplayId ? "var(--success)" : undefined }}
+                onClick={function() { setPairModalOpen(true); }}
+                title="Link a TV or iPad display"
+              >
+                {linkedDisplayId ? "📺 Linked" : "📺 Display"}
+              </button>
+            )}
           </div>
 
           <div className="sets-bar">
@@ -3775,6 +4278,35 @@ function VolleyballTracker() {
           liveError={liveError}
           parentSubmitStatus={parentSubmitStatus}
           onSubmitHighlight={handleSubmitParentHighlight}
+        />
+      )}
+
+      {/* ========== DISPLAY SCREEN (TV / iPad scoreboard) ========== */}
+      {screen === SCREEN.DISPLAY && displayId && (
+        <DisplayView displayId={displayId} />
+      )}
+
+      {/* ========== PAIR SCREEN (scorekeeper scanned TV QR) ========== */}
+      {screen === SCREEN.PAIR && pairTargetId && (
+        <PairConfirmView
+          pairId={pairTargetId}
+          onGoToApp={function() {
+            setPairTargetId(null);
+            // Strip ?pair= from URL so refreshing doesn't re-enter PAIR mode
+            if (window.history && window.history.replaceState) {
+              window.history.replaceState({}, "", window.location.pathname);
+            }
+            setScreen(SCREEN.SETUP);
+          }}
+        />
+      )}
+
+      {/* ========== PAIR MODAL (📺 Display button) ========== */}
+      {pairModalOpen && (
+        <PairModal
+          state={state}
+          onClose={function() { setPairModalOpen(false); }}
+          onLinked={function(id) { setLinkedDisplayId(id); }}
         />
       )}
 

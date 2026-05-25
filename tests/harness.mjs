@@ -26,6 +26,7 @@ const src = html.slice(begin, end);
 
 const sandbox = {
   console,
+  URLSearchParams,
   window: {},
   document: {},
   navigator: {},

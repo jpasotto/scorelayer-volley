@@ -55,6 +55,18 @@
           }
         }
       }
+    },
+    "displays": {
+      "$displayId": {
+        ".read": true,
+        ".write": "auth != null",
+        "matchId":        { ".validate": "newData.isString() && newData.val().length < 40" },
+        "teamA":          { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "teamB":          { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "linkedAt":       { ".validate": "newData.isNumber()" },
+        "scorekeeperUid": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+        "$other":         { ".validate": false }
+      }
     }
   }
 }
