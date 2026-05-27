@@ -67,10 +67,7 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .donate-label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); text-align: center; }
   .btn-donate-revolut { display: block; text-decoration: none; text-align: center; background: linear-gradient(135deg, #00b4d8, #0077b6); color: #fff; padding: 13px 20px; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,119,182,0.35); font-family: var(--font-display); text-transform: uppercase; transition: all 0.15s; }
   .btn-donate-revolut:active { transform: scale(0.97); }
-  .donate-bizum-row { display: flex; align-items: center; gap: 8px; background: var(--surface2); border-radius: 8px; padding: 9px 12px; }
-  .donate-bizum-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); flex-shrink: 0; }
-  .donate-bizum-phone { font-family: var(--font-mono); font-size: 13px; color: var(--text); flex: 1; }
-  .donate-bizum-copy { padding: 4px 10px !important; font-size: 10px !important; flex-shrink: 0; }
+
   /* --- Manual button in header --- */
   .manual-btn { background: none; border: 1px solid var(--surface2); color: var(--text-dim); border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: var(--font-display); line-height: 1; -webkit-tap-highlight-color: transparent; }
   .manual-btn:active { background: var(--surface2); }
@@ -294,9 +291,7 @@ var MIN_LEAD = 2;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
 var APP_VERSION = "3.4.0-beta";
-// --- Donate channels (placeholders — fill real values before launch) ---
-var DONATE_URL = "https://revolut.me/your-tag";
-var BIZUM_PHONE = "+34 600 000 000";
+var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
 // Web client config for the scorelayer-volley Firebase project. The apiKey is
@@ -2400,37 +2395,14 @@ var sync = (function() {
 const { useState, useRef, useCallback, useEffect, useMemo } = React;
 
 // ─── DonateBlock ───────────────────────────────────────────────────────────
-// Shared two-channel donate UI reused in BetaModal, ManualModal, DonatePromptModal.
+// Shared donate UI reused in BetaModal, ManualModal, DonatePromptModal.
 function DonateBlock() {
-  const [bizumCopied, setBizumCopied] = useState(false);
-  function copyBizum(e) {
-    e.preventDefault();
-    var text = BIZUM_PHONE;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(function() {});
-    } else {
-      var ta = document.createElement("textarea");
-      ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0;";
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch (_) {}
-      document.body.removeChild(ta);
-    }
-    setBizumCopied(true);
-    setTimeout(function() { setBizumCopied(false); }, 2200);
-  }
   return (
     <div className="donate-block">
-      <div className="donate-label">Support development ☕</div>
+      <div className="donate-label">Saved some court-side editing time?</div>
       <a className="btn-donate-revolut" href={DONATE_URL} target="_blank" rel="noopener noreferrer">
-        💳 Donate with card (Revolut)
+        ☕ Buy me a coffee break — 5€ is plenty
       </a>
-      <div className="donate-bizum-row">
-        <span className="donate-bizum-label">Bizum</span>
-        <span className="donate-bizum-phone">{BIZUM_PHONE}</span>
-        <button className="btn btn-small donate-bizum-copy" onClick={copyBizum}>
-          {bizumCopied ? "✓ Copied" : "Copy"}
-        </button>
-      </div>
     </div>
   );
 }
