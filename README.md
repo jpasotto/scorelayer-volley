@@ -7,13 +7,13 @@ A mobile-first volleyball score tracker with timestamped point logging, multi-fo
 
 - **Live scoring** — Tap + / − to track points with set/match auto-detection
 - **Sync button** — Press at a known video moment (first serve or recording start) to align timestamps
-- **Live Share** — Publish the match to spectators via a QR code; parents see real-time scores and submit highlights from the stands
+- **Live Share** — Publish the match to spectators via a QR code or a link you can paste in a WhatsApp group; parents see real-time scores and submit highlights from the stands
 - **YouTube chapters** — Auto-generate a chapters file with set boundaries and highlight markers
+- **In-browser MP4 overlay** — WebCodecs generates a chroma-keyable scoreboard video right in your phone; merge it with your recording in iMovie (iPhone/Mac) or any equivalent app on Windows
 - **SRT export** — Import directly into Final Cut Pro or YouTube as captions
 - **FCPXML export** — Native Final Cut Pro timeline with positioned title clips
 - **ASS export** — Advanced SubStation Alpha subtitles with positioned score + info rows
 - **CSV export** — Full point log with wall-clock time, video offset, set/match state
-- **In-browser MP4 overlay** — WebCodecs generates a chroma-keyable scoreboard video right in your phone
 - **Chroma Key Kit** — ZIP with Python + FFmpeg fallback for desktop overlay generation
 - **PWA** — Add to Home Screen on iPhone/iPad for a native-app experience
 
