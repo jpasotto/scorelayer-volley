@@ -288,6 +288,10 @@ var POINTS_TO_WIN_SET = 25;
 var POINTS_TO_WIN_TIEBREAK = 15;
 var SETS_TO_WIN_MATCH = 3;
 var MIN_LEAD = 2;
+// ★ overlay star stays lit this long (seconds) after a new score appears, then
+// the same score keeps displaying unlit. Caps the highlight to a short tail so
+// it no longer bleeds across the following point (issue #51).
+var OVERLAY_STAR_SEC = 5;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
 var APP_VERSION = "3.4.0-beta";
@@ -756,14 +760,18 @@ function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumbe
   // Add highlight chapters — skip if timestamp coincides with a set boundary
   var setFirstMsValues = {};
   for (var setKey in setFirstMs) { setFirstMsValues[setFirstMs[setKey]] = true; }
+  // When Set 1 was rounded to 0:00, treat 0 as an occupied boundary so a
+  // first-point highlight collapsed to 0 is skipped rather than duplicated.
+  if (set1AtZero) setFirstMsValues[0] = true;
   for (var k = 0; k < pointLog.length; k++) {
     var ph = pointLog[k];
     if (!ph.highlight) continue;
     var offsetMs = ph.timestamp - syncTimestamp;
     if (offsetMs < 0) continue;
-    // When a highlight is the first point of a set, it coincides with the set boundary chapter.
-    // Skip the highlight chapter to avoid duplicate timestamps that break ascending order.
-    var effectiveMs = (set1AtZero && ph.setNum === 1) ? 0 : offsetMs;
+    // Only collapse to 0:00 the set-1 highlight that actually coincides with the
+    // rounded-to-zero set start (offset <= 1s). A later set-1 highlight must keep
+    // its real offset (issue #51 — it was wrongly pinned to 0:00).
+    var effectiveMs = (set1AtZero && ph.setNum === 1 && offsetMs <= 1000) ? 0 : offsetMs;
     if (setFirstMsValues[effectiveMs]) continue;
     var hlText = "\u2605 " + teamA + " " + ph.pointsA + "-" + ph.pointsB + " " + teamB + " (" + formatSetLabel(ph.setNum, setNumberOffset) + ")";
     if (ph.highlightNote) hlText += " [" + ph.highlightNote + "]";
@@ -961,17 +969,42 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
     } else {
       var isSetBreak = i < pointLog.length - 1 && pointLog[i + 1].setNum !== p.setNum;
       endSec = isSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-      entries.push({
-        type: 'score',
-        start: Math.round(startSec * 1000) / 1000,
-        end:   Math.round(endSec   * 1000) / 1000,
-        score:      teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB,
-        set_info:   formatSetLabel(p.setNum, setNumberOffset),
-        title:      title,
-        sets_score: 'Sets ' + setsA + ':' + setsB,
-        highlight: p.highlight || false,
-        highlightNote: p.highlightNote || null
-      });
+      var scoreText = teamA + '  ' + p.pointsA + ' : ' + p.pointsB + '  ' + teamB;
+      var setInfo   = formatSetLabel(p.setNum, setNumberOffset);
+      var setsScore = 'Sets ' + setsA + ':' + setsB;
+      var isHighlighted = p.highlight || false;
+      var hlNote = p.highlightNote || null;
+      // Cap the ★ to a short tail: when a highlighted point's own score entry
+      // would run longer than OVERLAY_STAR_SEC, split it into a lit head and an
+      // unlit tail so the star disappears while the same score keeps showing
+      // (issue #51). The previous (rally) entry stays fully lit via the
+      // back-propagation above.
+      if (isHighlighted && (endSec - startSec) > OVERLAY_STAR_SEC) {
+        var splitSec = startSec + OVERLAY_STAR_SEC;
+        entries.push({
+          type: 'score',
+          start: Math.round(startSec * 1000) / 1000,
+          end:   Math.round(splitSec * 1000) / 1000,
+          score: scoreText, set_info: setInfo, title: title, sets_score: setsScore,
+          highlight: true, highlightNote: hlNote
+        });
+        entries.push({
+          type: 'score',
+          start: Math.round(splitSec * 1000) / 1000,
+          end:   Math.round(endSec   * 1000) / 1000,
+          score: scoreText, set_info: setInfo, title: title, sets_score: setsScore,
+          highlight: false, highlightNote: null
+        });
+      } else {
+        entries.push({
+          type: 'score',
+          start: Math.round(startSec * 1000) / 1000,
+          end:   Math.round(endSec   * 1000) / 1000,
+          score: scoreText, set_info: setInfo, title: title, sets_score: setsScore,
+          highlight: isHighlighted,
+          highlightNote: hlNote
+        });
+      }
       if (isSetBreak) {
         entries.push({
           start: Math.round(endSec * 1000) / 1000,
@@ -992,11 +1025,11 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
       if (typeof h.clientTimestamp !== "number") continue;
       var tSec = (h.clientTimestamp - syncTimestamp) / 1000;
       if (tSec < 0) continue;
-      var target = null;
+      var target = null, targetIdx = -1;
       for (var k = 0; k < entries.length; k++) {
         var e = entries[k];
         if (e.blank || e.type !== "score") continue;
-        if (tSec >= e.start && tSec < e.end) { target = e; break; }
+        if (tSec >= e.start && tSec < e.end) { target = e; targetIdx = k; break; }
       }
       if (!target) continue;
       var parentBlurb = [
@@ -1005,10 +1038,32 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
         h.note || null
       ].filter(Boolean).join(" · ");
       if (!parentBlurb) parentBlurb = "Parent highlight";
-      target.highlight = true;
-      target.highlightNote = target.highlightNote
-        ? target.highlightNote + " + " + parentBlurb
-        : parentBlurb;
+      if (target.highlight) {
+        // Already lit (scorekeeper ★ or an earlier parent) — just append the
+        // note; leave the existing timing/split alone.
+        target.highlightNote = target.highlightNote
+          ? target.highlightNote + " + " + parentBlurb
+          : parentBlurb;
+      } else if ((target.end - target.start) > OVERLAY_STAR_SEC) {
+        // Cap the parent star to the same short tail (issue #51): shrink the
+        // matched entry to a lit head and insert an unlit tail after it.
+        var pOrigEnd = target.end;
+        var pSplit = Math.round((target.start + OVERLAY_STAR_SEC) * 1000) / 1000;
+        target.end = pSplit;
+        target.highlight = true;
+        target.highlightNote = parentBlurb;
+        entries.splice(targetIdx + 1, 0, {
+          type: 'score',
+          start: pSplit,
+          end:   pOrigEnd,
+          score: target.score, set_info: target.set_info,
+          title: target.title, sets_score: target.sets_score,
+          highlight: false, highlightNote: null
+        });
+      } else {
+        target.highlight = true;
+        target.highlightNote = parentBlurb;
+      }
     }
   }
 
