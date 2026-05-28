@@ -64,13 +64,13 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .beta-modal-note { font-size: 12px; color: var(--text-dim); line-height: 1.6; margin-bottom: 16px; font-family: var(--font-mono); border-top: 1px solid var(--surface2); padding-top: 12px; margin-top: 12px; }
   /* --- Donate block (shared across BetaModal, ManualModal, DonatePromptModal) --- */
   .donate-block { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; }
-  .donate-label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); text-align: center; }
+  .donate-label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #00b4d8; text-align: center; }
   .btn-donate-revolut { display: block; text-decoration: none; text-align: center; background: linear-gradient(135deg, #00b4d8, #0077b6); color: #fff; padding: 13px 20px; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,119,182,0.35); font-family: var(--font-display); text-transform: uppercase; transition: all 0.15s; }
   .btn-donate-revolut:active { transform: scale(0.97); }
 
   /* --- Manual button in header --- */
-  .manual-btn { background: none; border: 1px solid var(--surface2); color: var(--text-dim); border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: var(--font-display); line-height: 1; -webkit-tap-highlight-color: transparent; }
-  .manual-btn:active { background: var(--surface2); }
+  .manual-btn { background: none; border: 1px solid #00b4d8; color: #00b4d8; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: var(--font-display); line-height: 1; -webkit-tap-highlight-color: transparent; }
+  .manual-btn:active { background: rgba(0,180,216,0.12); }
   /* --- Manual modal --- */
   .manual-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
   .manual-dialog { background: var(--surface); border-radius: 20px 20px 0 0; width: 100%; max-width: 480px; max-height: 90dvh; display: flex; flex-direction: column; }
@@ -2438,9 +2438,20 @@ function ManualModal(props) {
       });
   }, []);
 
-  var parsedHtml = (!loading && !fetchError && typeof marked !== "undefined")
-    ? marked.parse(content)
-    : "";
+  // Split rendered HTML at the ## Usage heading so DonateBlock can be
+  // inserted between the Features list and the Usage/Live Share sections.
+  var htmlParts = { before: "", after: "" };
+  if (!loading && !fetchError && typeof marked !== "undefined") {
+    var full = marked.parse(content);
+    // marked renders ## Usage as <h2 ...>Usage</h2> — find that boundary.
+    var splitIdx = full.search(/<h2[^>]*>\s*Usage\s*<\/h2>/i);
+    if (splitIdx !== -1) {
+      htmlParts.before = full.slice(0, splitIdx);
+      htmlParts.after  = full.slice(splitIdx);
+    } else {
+      htmlParts.before = full;
+    }
+  }
 
   return (
     <div className="manual-overlay" onClick={props.onClose}>
@@ -2453,7 +2464,15 @@ function ManualModal(props) {
           {loading && <div className="manual-loading">Loading manual…</div>}
           {fetchError && <div className="manual-error">{fetchError}</div>}
           {!loading && !fetchError && (
-            <div className="manual-content" dangerouslySetInnerHTML={{ __html: parsedHtml }} />
+            <>
+              <div className="manual-content" dangerouslySetInnerHTML={{ __html: htmlParts.before }} />
+              <div className="manual-donate-section">
+                <DonateBlock />
+              </div>
+              {htmlParts.after && (
+                <div className="manual-content" dangerouslySetInnerHTML={{ __html: htmlParts.after }} />
+              )}
+            </>
           )}
           <div className="manual-donate-section">
             <DonateBlock />
