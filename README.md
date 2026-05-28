@@ -110,6 +110,7 @@ Single `index.html` file — React 18 + Babel Standalone (CDN), `mp4-muxer` ES m
 
 | Version | What shipped |
 |---|---|
+| **v3.4.0-beta** | In-app manual (`?` button → fetches README, renders Features + Usage + Live Share via marked), donate plumbing (Revolut button in BETA modal, manual, and post-export nudge), blue `?` / donate label styling, README manual sentinels (closes #42, #43, #45) |
 | **v3.3.0-beta** | New SL-on-volleyball app icon (SVG + 192/512 PNG), refreshed README, version bump |
 | **v3.2.0-beta** | Spectator previous-sets panel, parent highlight tag chips + `★ Quick` one-tap submit, score snapshot at submission time, parent highlights merged into in-video overlay, Firebase rules extended for the new fields (#39, closes #36) |
 | **v3.1.0-beta** | Tappable scorekeeper highlight notes in the match log, MP4 overlay preserves pre-rally score when a highlight spans two entries, beta info modal shows `APP_VERSION` (#35) |
