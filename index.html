@@ -1038,6 +1038,22 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
         h.note || null
       ].filter(Boolean).join(" · ");
       if (!parentBlurb) parentBlurb = "Parent highlight";
+      // Back-propagate the ★ to the rally entry — the previous point's score in
+      // the same set — mirroring the scorekeeper highlight behavior above, so a
+      // spectator highlight also marks the play that produced the score (not just
+      // the 5s after it). Skip blanks, non-score entries, and split siblings of
+      // the matched point (same score string).
+      var rallyIdx = targetIdx - 1;
+      while (rallyIdx >= 0 && (entries[rallyIdx].blank || entries[rallyIdx].type !== 'score' || entries[rallyIdx].score === target.score)) {
+        rallyIdx--;
+      }
+      if (rallyIdx >= 0 && entries[rallyIdx].set_info === target.set_info) {
+        var rally = entries[rallyIdx];
+        rally.highlight = true;
+        rally.highlightNote = rally.highlightNote
+          ? rally.highlightNote + " + " + parentBlurb
+          : parentBlurb;
+      }
       if (target.highlight) {
         // Already lit (scorekeeper ★ or an earlier parent) — just append the
         // note; leave the existing timing/split alone.
