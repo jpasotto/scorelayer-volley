@@ -391,6 +391,38 @@ test("buildOverlayEntries: #51 — parent highlight on a long entry produces lit
   assert.equal(twoZero[0].end, twoZero[1].start, "head and tail must be contiguous");
 });
 
+test("buildOverlayEntries: spectator highlight back-propagates the ★ to the rally (previous) entry", () => {
+  // Mirrors the scorekeeper behavior: a parent who taps just after the score
+  // appears should also light the play that produced it (the previous point's
+  // entry), not only the 5s tail on the new score.
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 4000,  setNum: 1, pointsA: 0, pointsB: 18, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 16000, setNum: 1, pointsA: 0, pointsB: 19, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 40000, setNum: 1, pointsA: 0, pointsB: 20, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 52000, setNum: 1, pointsA: 0, pointsB: 21, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  // Parent taps just after 0-20 appears (entry window [40s, 52s]).
+  const ph = [{ clientTimestamp: sync + 42000, name: "Dad", note: "Nice dig", deleted: false }];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  entries.forEach((e, i) => assert.ok(e.end > e.start, `entry ${i} collapsed`));
+
+  // Rally entry (0-19) — the play that produced 0-20 — must be lit for its full duration.
+  const rally = entries.filter((e) => e.type === "score" && e.score && e.score.includes("0 : 19"));
+  assert.equal(rally.length, 1, "rally entry must not be split");
+  assert.equal(rally[0].highlight, true, "rally (0-19) entry must be lit via back-propagation");
+  assert.ok(rally[0].highlightNote && rally[0].highlightNote.includes("Dad"), "rally note carries the parent blurb");
+
+  // Matched entry (0-20) gets the capped 5s lit head.
+  const twentyHead = entries.find((e) => e.type === "score" && e.score && e.score.includes("0 : 20") && e.highlight);
+  assert.ok(twentyHead, "0-20 entry should have a lit head");
+  assert.ok(Math.abs((twentyHead.end - twentyHead.start) - helpers.OVERLAY_STAR_SEC) < 0.001, "head ≈ OVERLAY_STAR_SEC long");
+
+  // The earlier point (0-18) must stay unlit.
+  const eighteen = entries.find((e) => e.type === "score" && e.score && e.score.includes("0 : 18"));
+  assert.equal(eighteen.highlight, false, "points before the rally stay unlit");
+});
+
 // ---------- helpers ----------
 
 function parseSrtTime(s) {
