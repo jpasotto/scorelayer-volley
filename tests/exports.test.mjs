@@ -72,6 +72,38 @@ test("buildYouTubeChapterList: realistic match passes validateYouTubeChapters", 
   assert.equal(result.errors.length, 0);
 });
 
+test("buildYouTubeChapterList: #51 — later set-1 highlight keeps its true offset when set 1 starts at 0:00", () => {
+  const sync = 1700000000000;
+  const log = [
+    // Set 1 first point within 1s of sync → set1AtZero = true
+    { timestamp: sync + 800,   setNum: 1, pointsA: 1, pointsB: 0, highlight: false, highlightNote: null },
+    // Mid-set highlight ~16s in → must NOT collapse to 0:00 (the original bug)
+    { timestamp: sync + 16159, setNum: 1, pointsA: 2, pointsB: 0, highlight: true,  highlightNote: "Great spike" },
+    { timestamp: sync + 30000, setNum: 1, pointsA: 3, pointsB: 0, highlight: false, highlightNote: null },
+  ];
+  const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
+  const hl = out.find((c) => c.text.includes("Great spike"));
+  assert.ok(hl, "expected the mid-set highlight chapter");
+  assert.equal(hl.timeMs, 16159, "later set-1 highlight must keep its true offset, not 0:00");
+  // Only the "Set 1 Start" chapter belongs at 0:00.
+  assert.equal(out.filter((c) => c.timeMs === 0).length, 1, "no spurious 0:00 highlight chapter");
+  for (let i = 1; i < out.length; i++) {
+    assert.ok(out[i].timeMs > out[i - 1].timeMs, "chapters strictly ascending");
+  }
+});
+
+test("buildYouTubeChapterList: #51 — first-point set-1 highlight does not create a duplicate 0:00 chapter", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 500,   setNum: 1, pointsA: 1, pointsB: 0, highlight: true,  highlightNote: "Opening ace" },
+    { timestamp: sync + 30000, setNum: 1, pointsA: 2, pointsB: 0, highlight: false, highlightNote: null },
+  ];
+  const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
+  const atZero = out.filter((c) => c.timeMs === 0);
+  assert.equal(atZero.length, 1, "only the Set 1 Start chapter should sit at 0:00");
+  assert.equal(atZero[0].text, "Set 1 Start", "the single 0:00 chapter is the set start, not the highlight");
+});
+
 // ---------- generateCSV ----------
 
 test("generateCSV: each point produces one row with the documented columns", () => {
@@ -261,10 +293,13 @@ test("buildOverlayEntries: parent highlight on a scorekeeper-starred entry appen
     { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: true,  highlightNote: "Great spike" },
     { timestamp: sync + 300000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
   ];
-  const ph = [{ clientTimestamp: sync + 250000, name: "Alice", note: "agreed", deleted: false }];
+  // Parent presses within the scorekeeper star window (issue #51 caps the ★ to
+  // OVERLAY_STAR_SEC after the score appears at +200s), so this is genuine
+  // agreement on the same moment and must append rather than overwrite.
+  const ph = [{ clientTimestamp: sync + 202000, name: "Alice", note: "agreed", deleted: false }];
   const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
-  const target = entries.find(e => e.type === "score" && e.score && e.score.includes("2 : 0"));
-  assert.ok(target, "expected score 2 : 0 entry");
+  const target = entries.find(e => e.type === "score" && e.score && e.score.includes("2 : 0") && e.highlight);
+  assert.ok(target, "expected highlighted score 2 : 0 entry");
   assert.ok(target.highlightNote.includes("Great spike"), "original scorekeeper note must be preserved");
   assert.ok(target.highlightNote.includes("Alice"), "parent name must be appended");
   assert.ok(target.highlightNote.includes(" + "), "join must use ' + ' delimiter");
@@ -298,6 +333,62 @@ test("buildOverlayEntries: set-boundary guard — highlight on first point of se
   assert.ok(set1Entries.length > 0, "expected at least one set-1 score entry");
   const lastSet1 = set1Entries[set1Entries.length - 1];
   assert.equal(lastSet1.highlight, false, "last set-1 entry must keep highlight: false (cross-set propagation blocked)");
+});
+
+test("buildOverlayEntries: #51 — highlighted score entry splits into lit head (~5s) + unlit tail", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 4000,  setNum: 1, pointsA: 9,  pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 16000, setNum: 1, pointsA: 10, pointsB: 0, setsA: 0, setsB: 0, highlight: true,  highlightNote: "Great spike" },
+    { timestamp: sync + 28000, setNum: 1, pointsA: 11, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+  entries.forEach((e, i) => assert.ok(e.end > e.start, `entry ${i} collapsed`));
+
+  const tenZero = entries.filter((e) => e.type === "score" && e.score && e.score.includes("10 : 0"));
+  assert.equal(tenZero.length, 2, "highlighted 10:0 score should split into lit head + unlit tail");
+  const head = tenZero[0], tail = tenZero[1];
+  assert.equal(head.highlight, true, "head is lit");
+  assert.equal(tail.highlight, false, "tail is unlit");
+  assert.equal(head.highlightNote, "Great spike");
+  assert.equal(tail.highlightNote, null);
+  assert.ok(Math.abs((head.end - head.start) - helpers.OVERLAY_STAR_SEC) < 0.001, "head ≈ OVERLAY_STAR_SEC long");
+  assert.equal(head.end, tail.start, "head and tail must be contiguous");
+  // The rally (9:0) entry stays fully lit via #35 back-propagation
+  const nineZero = entries.find((e) => e.type === "score" && e.score && e.score.includes("9 : 0"));
+  assert.equal(nineZero.highlight, true, "rally entry stays lit");
+});
+
+test("buildOverlayEntries: #51 — short highlighted entry (<= star window) stays a single lit entry", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 4000, setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 8000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: true,  highlightNote: "Quick" },
+    { timestamp: sync + 11000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0);
+  const twoZero = entries.filter((e) => e.type === "score" && e.score && e.score.includes("2 : 0"));
+  assert.equal(twoZero.length, 1, "short highlighted entry must not split");
+  assert.equal(twoZero[0].highlight, true);
+});
+
+test("buildOverlayEntries: #51 — parent highlight on a long entry produces lit head + unlit tail", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 4000,  setNum: 1, pointsA: 1, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 16000, setNum: 1, pointsA: 2, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 40000, setNum: 1, pointsA: 3, pointsB: 0, setsA: 0, setsB: 0, highlight: false, highlightNote: null },
+  ];
+  const ph = [{ clientTimestamp: sync + 18000, name: "Alice", note: "Big rally", deleted: false }];
+  const entries = helpers.buildOverlayEntries(log, sync, "Home", "Away", "Test", 0, ph);
+  entries.forEach((e, i) => assert.ok(e.end > e.start, `entry ${i} collapsed`));
+  const twoZero = entries.filter((e) => e.type === "score" && e.score && e.score.includes("2 : 0"));
+  assert.equal(twoZero.length, 2, "parent-marked long entry should split into head + tail");
+  assert.equal(twoZero[0].highlight, true, "head is lit");
+  assert.ok(twoZero[0].highlightNote.includes("Alice"), "head note includes parent name");
+  assert.ok(Math.abs((twoZero[0].end - twoZero[0].start) - helpers.OVERLAY_STAR_SEC) < 0.001, "head ≈ OVERLAY_STAR_SEC long");
+  assert.equal(twoZero[1].highlight, false, "tail is unlit");
+  assert.equal(twoZero[0].end, twoZero[1].start, "head and tail must be contiguous");
 });
 
 // ---------- helpers ----------
