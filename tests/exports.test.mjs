@@ -133,6 +133,51 @@ test("generateCSV: matchTitle is CSV-escaped (quotes doubled, commas wrapped)", 
   assert.ok(csv.includes('"He said ""go"", I went"'));
 });
 
+// ---------- parseCSVToEntries (import / recovery) ----------
+
+const NO_OFFSET_CSV = [
+  "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+  '1,09:32:39,,1,1,0,0,0,Slf,N,N,"","","Slf 1-0 Recuerdo"',
+  '2,09:32:40,,1,1,1,0,0,Recuerdo,N,N,"","","Slf 1-1 Recuerdo"',
+  '3,09:32:44,,1,1,0,0,0,Recuerdo,Y,N,"","","Slf 1-0 Recuerdo"', // correction row → skipped
+  '4,09:33:09,,1,2,0,0,0,Slf,N,N,"","","Slf 2-0 Recuerdo"',
+].join("\n");
+
+test("parseCSVToEntries: empty VideoOffset_ms falls back to a WallClock-derived timeline (match scored without Sync)", () => {
+  const res = helpers.parseCSVToEntries(NO_OFFSET_CSV);
+  assert.ok(!res.error, `expected a successful parse, got error: ${res.error}`);
+  assert.equal(res.teamA, "Slf");
+  assert.equal(res.teamB, "Recuerdo");
+  // 3 scoring rows (the Correction=Y row is dropped).
+  assert.equal(res.pointLog.length, 3, "correction row must be excluded");
+  // First data row anchors the timeline at 0; others are relative to it.
+  assert.equal(res.pointLog[0].timestamp, 0, "first point anchored at offset 0");
+  assert.equal(res.pointLog[1].timestamp, 1000, "09:32:40 is 1s after the anchor");
+  assert.equal(res.pointLog[2].timestamp, 30000, "09:33:09 is 30s after the anchor");
+  assert.ok(res.entries.length > 0, "overlay entries must be produced");
+});
+
+test("parseCSVToEntries: numeric VideoOffset_ms still takes precedence over WallClock", () => {
+  const csv = [
+    "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+    '1,09:32:39,5000,1,1,0,0,0,Slf,N,N,"","","Slf 1-0 Recuerdo"',
+    '2,09:32:40,8000,1,1,1,0,0,Recuerdo,N,N,"","","Slf 1-1 Recuerdo"',
+  ].join("\n");
+  const res = helpers.parseCSVToEntries(csv);
+  assert.ok(!res.error, `expected success, got: ${res.error}`);
+  assert.equal(res.pointLog[0].timestamp, 5000, "uses the explicit offset, not the wall clock");
+  assert.equal(res.pointLog[1].timestamp, 8000);
+});
+
+test("parseCSVToEntries: rows with neither offset nor parseable WallClock are rejected", () => {
+  const csv = [
+    "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+    '1,,,1,1,0,0,0,Slf,N,N,"","","Slf 1-0 Recuerdo"',
+  ].join("\n");
+  const res = helpers.parseCSVToEntries(csv);
+  assert.ok(res.error, "expected an error when no timing source is available");
+});
+
 // ---------- generateSRT / generateHighlightsSRT ----------
 
 test("generateSRT: cue indices are 1-based and contiguous", () => {

@@ -1085,7 +1085,6 @@ function buildOverlayEntries(pointLog, syncTimestamp, teamA, teamB, matchTitle, 
 
   return entries.filter(function(e) { return e.end > e.start; });
 }
-// EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
 // --- Chroma Key shell script + Python frame renderer ---
 // Info row rendered in Python: title at x=80 (left), Set N centered, Sets A:B at x=WIDTH-80 (right)
@@ -1590,6 +1589,16 @@ function generateReadme(teamA, teamB) {
 
 
 // --- CSV parser (for import/recovery) ---
+// Parse a "HH:MM:SS" (or "H:MM") wall-clock string to milliseconds since
+// midnight. Returns null when unparseable. Used as a timeline fallback when a
+// CSV has no VideoOffset_ms (e.g. a match scored without pressing Sync).
+function parseClockToMs(clock) {
+  if (!clock) return null;
+  var m = String(clock).replace(/"/g, "").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  var h = parseInt(m[1], 10), min = parseInt(m[2], 10), s = m[3] ? parseInt(m[3], 10) : 0;
+  return ((h * 60 + min) * 60 + s) * 1000;
+}
 function parseCSVToEntries(csvText, matchTitle) {
   var lines = csvText.trim().split("\n");
   if (lines.length < 2) return { error: "CSV must have a header row and at least one data row." };
@@ -1607,6 +1616,7 @@ function parseCSVToEntries(csvText, matchTitle) {
   var iTitle = cols.indexOf("MatchTitle");
   var iHL = cols.indexOf("Highlight");
   var iHLNote = cols.indexOf("HighlightNote");
+  var iWall = cols.indexOf("WallClock");
 
   if (iOffset === -1 || iSet === -1 || iPA === -1 || iPB === -1) {
     return { error: "CSV missing required columns: VideoOffset_ms, Set, PointsA, PointsB" };
@@ -1629,13 +1639,23 @@ function parseCSVToEntries(csvText, matchTitle) {
     break;
   }
 
+  // Build data rows. Prefer VideoOffset_ms; when it is blank (e.g. a match
+  // scored without pressing Sync, which exports an empty offset column) fall
+  // back to a timeline derived from WallClock, anchored at the first data row.
+  var wallBaseMs = null;
   var dataRows = [];
   for (var i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     var row = parseCSVRow(lines[i]);
-    var offset = parseInt(row[iOffset], 10);
-    if (isNaN(offset)) continue;
     if (iCorr !== -1 && row[iCorr] && row[iCorr].trim() === "Y") continue;
+    var offset = parseInt(row[iOffset], 10);
+    if (isNaN(offset)) {
+      var wallMs = iWall !== -1 ? parseClockToMs(row[iWall]) : null;
+      if (wallMs === null) continue;
+      if (wallBaseMs === null) wallBaseMs = wallMs;
+      offset = wallMs - wallBaseMs;
+      if (offset < 0) offset += 24 * 3600 * 1000; // match crossed midnight
+    }
     dataRows.push({
       offset_ms: offset,
       setNum: parseInt(row[iSet], 10) || 1,
@@ -1648,7 +1668,7 @@ function parseCSVToEntries(csvText, matchTitle) {
     });
   }
 
-  if (dataRows.length === 0) return { error: "No valid data rows found in CSV." };
+  if (dataRows.length === 0) return { error: "No valid data rows found in CSV (need a numeric VideoOffset_ms or a WallClock time on each point)." };
 
   // Read MatchTitle from CSV if no explicit title provided
   var csvTitle = "";
@@ -1789,6 +1809,7 @@ function parseCSVRow(line) {
   result.push(current);
   return result;
 }
+// EXPORTERS_END — sliced by tests/harness.mjs; do not remove
 
 
 // --- WebCodecs overlay generator ---
