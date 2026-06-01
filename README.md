@@ -6,7 +6,8 @@ A mobile-first volleyball score tracker with timestamped point logging, multi-fo
 ## Features
 
 - **Live scoring** — Tap + / − to track points with set/match auto-detection
-- **Sync button** — Press at a known video moment (first serve or recording start) to align timestamps
+- **Sync button** — Press at a known video moment (first serve or recording start) to align timestamps; available right on the setup screen so you can start the recording and sync *before* typing team names
+- **Editable team names anywhere** — Fix a typo from the setup screen, mid-match (mirrored live to spectators), or on the match-complete screen
 - **Live Share** — Publish the match to spectators via a QR code or a link you can paste in a WhatsApp group; parents see real-time scores and submit highlights from the stands
 - **YouTube chapters** — Auto-generate a chapters file with set boundaries and highlight markers
 - **In-browser MP4 overlay** — WebCodecs generates a chroma-keyable scoreboard video right in your phone; merge it with your recording in iMovie (iPhone/Mac) or any equivalent app on Windows
@@ -20,8 +21,8 @@ A mobile-first volleyball score tracker with timestamped point logging, multi-fo
 ## Usage
 
 1. Open the app URL in Safari
-2. Enter team names and tap **Start Match**
-3. Press **Sync** when the video recording starts (or at first serve)
+2. Enter team names and tap **Start Match** — or, if you're in a hurry, press **Sync** first and fill in the names later
+3. Press **Sync** when the video recording starts (or at first serve) — from the setup screen or the match screen
 4. Tap **+** for each point scored, **★** to mark a highlight
 5. When the match ends, export in your preferred format
 
@@ -110,6 +111,7 @@ Single `index.html` file — React 18 + Babel Standalone (CDN), `mp4-muxer` ES m
 
 | Version | What shipped |
 |---|---|
+| **v3.4.1-beta** | Sync control on the setup screen (sync before typing team names), in-match team rename for scorekeeper/solo with Live Share mirroring to spectators |
 | **v3.4.0-beta** | In-app manual (`?` button → fetches README, renders Features + Usage + Live Share via marked), donate plumbing (Revolut button in BETA modal, manual, and post-export nudge), blue `?` / donate label styling, README manual sentinels (closes #42, #43, #45) |
 | **v3.3.0-beta** | New SL-on-volleyball app icon (SVG + 192/512 PNG), refreshed README, version bump |
 | **v3.2.0-beta** | Spectator previous-sets panel, parent highlight tag chips + `★ Quick` one-tap submit, score snapshot at submission time, parent highlights merged into in-video overlay, Firebase rules extended for the new fields (#39, closes #36) |
