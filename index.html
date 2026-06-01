@@ -2956,6 +2956,7 @@ function VolleyballTracker() {
   const [sharePending, setSharePending] = useState(false);
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
+  const [showRenameRow, setShowRenameRow] = useState(false);
 
   const prevMatchOver = useRef(false);
 
@@ -3573,6 +3574,20 @@ function VolleyballTracker() {
           <div className="format-info">
             Tap <strong>+</strong> to score, <strong>&minus;</strong> to correct. Press <strong>SYNC</strong> at a known video moment to align timestamps. Match data is auto-saved.
           </div>
+          <div className={"sync-bar" + (state.syncTimestamp ? "" : " sync-bar-alert")} style={{ borderRadius: 10 }}>
+            {state.syncTimestamp ? (
+              <>
+                <div className="sync-dot on" />
+                <span className="sync-status synced">{"Synced @ " + formatClockTime(state.syncTimestamp)}</span>
+                <button className="btn btn-small" onClick={handleSync}>Re-sync</button>
+              </>
+            ) : (
+              <>
+                <span className="not-synced-badge">Not Synced</span>
+                <button className={"btn btn-small btn-sync-alert"} onClick={handleSync}>Sync Now</button>
+              </>
+            )}
+          </div>
           <button className="btn btn-primary" onClick={startMatch}>Start Match</button>
         </div>
       )}
@@ -3687,7 +3702,50 @@ function VolleyballTracker() {
                 </button>
               )
             )}
+            {state.role !== "spectator" && (
+              <button
+                className="btn btn-small"
+                style={{ marginLeft: 6, opacity: 0.7 }}
+                onClick={function() { setShowRenameRow(function(v) { return !v; }); }}
+              >
+                {showRenameRow ? "Done" : "✏ Names"}
+              </button>
+            )}
           </div>
+          {showRenameRow && state.role !== "spectator" && (
+            <div style={{ display: "flex", gap: 8, padding: "8px 16px", background: "var(--surface)", borderBottom: "1px solid var(--surface2)" }}>
+              <input
+                type="text"
+                value={state.teamA}
+                placeholder="Home"
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--surface2)", borderRadius: 8, padding: "8px 10px", fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 600, color: "var(--team-a)", outline: "none" }}
+                onChange={function(e) {
+                  var v = e.target.value;
+                  setState(function(s) {
+                    var next = { ...s, teamA: v };
+                    mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { teamA: v, teamB: s.teamB }); });
+                    autosaveState(next);
+                    return next;
+                  });
+                }}
+              />
+              <input
+                type="text"
+                value={state.teamB}
+                placeholder="Away"
+                style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--surface2)", borderRadius: 8, padding: "8px 10px", fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 600, color: "var(--team-b)", outline: "none" }}
+                onChange={function(e) {
+                  var v = e.target.value;
+                  setState(function(s) {
+                    var next = { ...s, teamB: v };
+                    mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { teamA: s.teamA, teamB: v }); });
+                    autosaveState(next);
+                    return next;
+                  });
+                }}
+              />
+            </div>
+          )}
 
           <div className="sets-bar">
             <div style={{ textAlign: "center" }}>
