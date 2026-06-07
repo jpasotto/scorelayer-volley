@@ -299,7 +299,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.3-beta";
+var APP_VERSION = "3.4.4-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -1763,22 +1763,29 @@ function parseCSVToEntries(csvText, matchTitle) {
       });
     } else {
       var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-      if (endSec <= startSec) continue;
-      entries.push({
-        type: 'score',
-        start: Math.round(startSec * 1000) / 1000,
-        end:   Math.round(endSec   * 1000) / 1000,
-        score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
-        set_info: "Set " + d.setNum, title: title,
-        sets_score: "Sets " + setsA + ":" + setsB,
-        highlight: d.highlight || false, highlightNote: d.highlightNote || null,
-      });
-      if (csvIsSetBreak) {
+      // A point immediately followed by a same-set highlight gets a zero-length
+      // overlay entry (its rawEndSec was pulled back to its own start so the
+      // highlight's rally can cover that slot). Skip only the empty overlay
+      // entry — the point itself must still be recorded in pointLog below, or
+      // YouTube chapters / Highlights SRT lose it and mis-place later highlights
+      // (issue: import path dropped the point before each highlight).
+      if (endSec > startSec) {
         entries.push({
-          start: Math.round(endSec    * 1000) / 1000,
-          end:   Math.round(rawEndSec * 1000) / 1000,
-          blank: true,
+          type: 'score',
+          start: Math.round(startSec * 1000) / 1000,
+          end:   Math.round(endSec   * 1000) / 1000,
+          score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
+          set_info: "Set " + d.setNum, title: title,
+          sets_score: "Sets " + setsA + ":" + setsB,
+          highlight: d.highlight || false, highlightNote: d.highlightNote || null,
         });
+        if (csvIsSetBreak) {
+          entries.push({
+            start: Math.round(endSec    * 1000) / 1000,
+            end:   Math.round(rawEndSec * 1000) / 1000,
+            blank: true,
+          });
+        }
       }
     }
     // pointLog uses timestamp=offset_ms so generateYouTubeChapters/generateHighlightsSRT work with syncTimestamp=0
