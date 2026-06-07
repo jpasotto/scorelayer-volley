@@ -292,9 +292,14 @@ var MIN_LEAD = 2;
 // the same score keeps displaying unlit. Caps the highlight to a short tail so
 // it no longer bleeds across the following point (issue #51).
 var OVERLAY_STAR_SEC = 5;
+// A YouTube highlight chapter points back to the rally that led to the score
+// (the previous point's time in the same set), but never shifts back further
+// than this — caps long dead-time gaps such as a timeout before a set-winning
+// point (issue #58).
+var HIGHLIGHT_RALLY_LEAD_MS = 30000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.1-beta";
+var APP_VERSION = "3.4.2-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -757,32 +762,36 @@ function buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, setNumbe
     }
   }
 
-  // Add highlight chapters — skip if timestamp coincides with a set boundary
-  var setFirstMsValues = {};
-  for (var setKey in setFirstMs) { setFirstMsValues[setFirstMs[setKey]] = true; }
-  // When Set 1 was rounded to 0:00, treat 0 as an occupied boundary so a
-  // first-point highlight collapsed to 0 is skipped rather than duplicated.
-  if (set1AtZero) setFirstMsValues[0] = true;
+  // Add highlight chapters. Point each at the rally that led to the score
+  // (issue #58): the previous point's time in the same set, but never shifted
+  // back more than HIGHLIGHT_RALLY_LEAD_MS (caps long dead-time gaps such as a
+  // timeout before a set-winning point). A highlight on the first point of a set
+  // has no in-set predecessor, so its lower bound is the set start (its own
+  // time) -> no shift. Colliding timestamps are bumped +1s so highlights are
+  // never silently dropped and YouTube's strictly-ascending rule still holds.
+  var seenMs = {};
+  chapters.forEach(function(c) { seenMs[c.timeMs] = true; });
   for (var k = 0; k < pointLog.length; k++) {
     var ph = pointLog[k];
     if (!ph.highlight) continue;
-    var offsetMs = ph.timestamp - syncTimestamp;
-    if (offsetMs < 0) continue;
-    // Only collapse to 0:00 the set-1 highlight that actually coincides with the
-    // rounded-to-zero set start (offset <= 1s). A later set-1 highlight must keep
-    // its real offset (issue #51 — it was wrongly pinned to 0:00).
-    var effectiveMs = (set1AtZero && ph.setNum === 1 && offsetMs <= 1000) ? 0 : offsetMs;
-    if (setFirstMsValues[effectiveMs]) continue;
+    var scoreMs = ph.timestamp - syncTimestamp;
+    if (scoreMs < 0) continue;
+    var lowerBoundMs = (k > 0 && pointLog[k - 1].setNum === ph.setNum)
+      ? (pointLog[k - 1].timestamp - syncTimestamp)
+      : scoreMs; // first point of set -> set start (== own offset)
+    var rallyMs = Math.max(lowerBoundMs, scoreMs - HIGHLIGHT_RALLY_LEAD_MS);
+    // Keep the #51 behavior of rounding a near-start set-1 chapter to 0:00.
+    var effectiveMs = (set1AtZero && ph.setNum === 1 && rallyMs <= 1000) ? 0 : rallyMs;
+    while (seenMs[effectiveMs]) effectiveMs += 1000;
+    seenMs[effectiveMs] = true;
     var hlText = "\u2605 " + teamA + " " + ph.pointsA + "-" + ph.pointsB + " " + teamB + " (" + formatSetLabel(ph.setNum, setNumberOffset) + ")";
     if (ph.highlightNote) hlText += " [" + ph.highlightNote + "]";
     chapters.push({ timeMs: effectiveMs, text: hlText });
   }
 
-  // Add parent-submitted highlights (Live Share). Bumps colliding timestamps
-  // by 1s so YouTube's strictly-ascending rule still holds.
+  // Add parent-submitted highlights (Live Share). Shares the collision map above
+  // so timestamps stay strictly ascending.
   if (parentHighlights && parentHighlights.length) {
-    var seenMs = {};
-    chapters.forEach(function(c) { seenMs[c.timeMs] = true; });
     for (var pi = 0; pi < parentHighlights.length; pi++) {
       var pp = parentHighlights[pi];
       if (!pp || pp.deleted) continue;
