@@ -92,16 +92,16 @@ test("buildYouTubeChapterList: #58 — highlight points to the previous point's 
   }
 });
 
-test("buildYouTubeChapterList: #58 — back-shift is capped at 60s for long dead-time gaps", () => {
+test("buildYouTubeChapterList: #58 — back-shift is capped at 30s for long dead-time gaps", () => {
   const sync = 1700000000000;
   const log = [
     { timestamp: sync + 5000,   setNum: 1, pointsA: 1, pointsB: 0, highlight: false, highlightNote: null },
-    // 195s gap before the highlight (e.g. a timeout): must cap at score - 60s.
+    // 195s gap before the highlight (e.g. a timeout): must cap at score - 30s.
     { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, highlight: true,  highlightNote: "Setter" },
   ];
   const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
   const hl = out.find((c) => c.text.includes("Setter"));
-  assert.equal(hl.timeMs, 200000 - 60000, "back-shift capped to score - 60s, not the 195s-earlier point");
+  assert.equal(hl.timeMs, 200000 - 30000, "back-shift capped to score - 30s, not the 195s-earlier point");
 });
 
 test("buildYouTubeChapterList: #58 — highlight on a set's first point is not shifted into the previous set", () => {
