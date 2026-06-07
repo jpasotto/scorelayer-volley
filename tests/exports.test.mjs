@@ -212,6 +212,27 @@ test("parseCSVToEntries: rows with neither offset nor parseable WallClock are re
   assert.ok(res.error, "expected an error when no timing source is available");
 });
 
+test("parseCSVToEntries: the point immediately before a highlight is kept in pointLog (not dropped)", () => {
+  // The overlay rally-back gives that point a zero-length overlay entry; it must
+  // still land in pointLog, or imported YouTube chapters / Highlights SRT lose it
+  // and mis-place the highlight (the bug: import dropped the point before each ★).
+  const csv = [
+    "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+    '1,00:00:05,5000,1,1,0,0,0,A,N,N,"","T","A 1-0 B"',
+    '2,00:00:50,50000,1,2,0,0,0,A,N,N,"","T","A 2-0 B"',   // immediately before the highlight
+    '3,00:01:00,60000,1,3,0,0,0,A,N,Y,"Spike","T","A 3-0 B"',
+  ].join("\n");
+  const res = helpers.parseCSVToEntries(csv);
+  assert.ok(!res.error, res.error);
+  assert.equal(res.pointLog.length, 3, "all 3 points kept — the 2-0 point before the ★ must not be dropped");
+  assert.equal(res.pointLog.map((p) => p.timestamp).join(","), "5000,50000,60000");
+  // With the in-between point present, the highlight chapter points to it (50s),
+  // not back to the first point / a capped offset.
+  const out = helpers.buildYouTubeChapterList(res.pointLog, 0, "A", "B", 0, []);
+  const hl = out.find((c) => c.text.includes("Spike"));
+  assert.equal(hl.timeMs, 50000, "highlight chapter points to the 2-0 point (its true rally start)");
+});
+
 // ---------- generateSRT / generateHighlightsSRT ----------
 
 test("generateSRT: cue indices are 1-based and contiguous", () => {
