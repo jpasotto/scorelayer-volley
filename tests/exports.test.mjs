@@ -24,12 +24,14 @@ test("buildYouTubeChapterList: empty pointLog + empty parentHighlights → only 
   assert.equal(out[0].text, "Match Start");
 });
 
-test("buildYouTubeChapterList: scorekeeper highlight produces a chapter at the right MM:SS", () => {
+test("buildYouTubeChapterList: scorekeeper highlight points to the rally start (previous point), not the score", () => {
   const out = helpers.buildYouTubeChapterList(pointLog, syncTimestamp, teamA, teamB, 0, []);
   const greatSpike = out.find((c) => c.text.includes("Great spike"));
   assert.ok(greatSpike, "expected a chapter for the Great spike highlight");
-  assert.equal(greatSpike.timeMs, 90000);
-  assert.equal(helpers.msToChapterTime(greatSpike.timeMs), "1:30");
+  // The scoring point is at 90000ms (1:30); its rally started at the previous
+  // point, 60000ms (1:00) — that's where the chapter must land (issue #58).
+  assert.equal(greatSpike.timeMs, 60000);
+  assert.equal(helpers.msToChapterTime(greatSpike.timeMs), "1:00");
   assert.ok(greatSpike.text.startsWith(STAR));
 });
 
@@ -72,27 +74,56 @@ test("buildYouTubeChapterList: realistic match passes validateYouTubeChapters", 
   assert.equal(result.errors.length, 0);
 });
 
-test("buildYouTubeChapterList: #51 — later set-1 highlight keeps its true offset when set 1 starts at 0:00", () => {
+test("buildYouTubeChapterList: #58 — highlight points to the previous point's time (rally start), not the score", () => {
   const sync = 1700000000000;
   const log = [
-    // Set 1 first point within 1s of sync → set1AtZero = true
-    { timestamp: sync + 800,   setNum: 1, pointsA: 1, pointsB: 0, highlight: false, highlightNote: null },
-    // Mid-set highlight ~16s in → must NOT collapse to 0:00 (the original bug)
-    { timestamp: sync + 16159, setNum: 1, pointsA: 2, pointsB: 0, highlight: true,  highlightNote: "Great spike" },
-    { timestamp: sync + 30000, setNum: 1, pointsA: 3, pointsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 5000,  setNum: 1, pointsA: 1, pointsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 20000, setNum: 1, pointsA: 2, pointsB: 0, highlight: false, highlightNote: null },
+    // Highlight at +40s; its rally started at the previous point (+20s).
+    { timestamp: sync + 40000, setNum: 1, pointsA: 3, pointsB: 0, highlight: true,  highlightNote: "Great spike" },
+    { timestamp: sync + 55000, setNum: 1, pointsA: 4, pointsB: 0, highlight: false, highlightNote: null },
   ];
   const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
   const hl = out.find((c) => c.text.includes("Great spike"));
-  assert.ok(hl, "expected the mid-set highlight chapter");
-  assert.equal(hl.timeMs, 16159, "later set-1 highlight must keep its true offset, not 0:00");
-  // Only the "Set 1 Start" chapter belongs at 0:00.
-  assert.equal(out.filter((c) => c.timeMs === 0).length, 1, "no spurious 0:00 highlight chapter");
+  assert.ok(hl, "expected the highlight chapter");
+  assert.equal(hl.timeMs, 20000, "chapter must point to the previous point (rally start), not the score at 40000");
   for (let i = 1; i < out.length; i++) {
     assert.ok(out[i].timeMs > out[i - 1].timeMs, "chapters strictly ascending");
   }
 });
 
-test("buildYouTubeChapterList: #51 — first-point set-1 highlight does not create a duplicate 0:00 chapter", () => {
+test("buildYouTubeChapterList: #58 — back-shift is capped at 60s for long dead-time gaps", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 5000,   setNum: 1, pointsA: 1, pointsB: 0, highlight: false, highlightNote: null },
+    // 195s gap before the highlight (e.g. a timeout): must cap at score - 60s.
+    { timestamp: sync + 200000, setNum: 1, pointsA: 2, pointsB: 0, highlight: true,  highlightNote: "Setter" },
+  ];
+  const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
+  const hl = out.find((c) => c.text.includes("Setter"));
+  assert.equal(hl.timeMs, 200000 - 60000, "back-shift capped to score - 60s, not the 195s-earlier point");
+});
+
+test("buildYouTubeChapterList: #58 — highlight on a set's first point is not shifted into the previous set", () => {
+  const sync = 1700000000000;
+  const log = [
+    { timestamp: sync + 5000,   setNum: 1, pointsA: 1,  pointsB: 0, highlight: false, highlightNote: null },
+    { timestamp: sync + 25000,  setNum: 1, pointsA: 25, pointsB: 0, highlight: false, highlightNote: null },
+    // First point of set 2, highlighted, 90s after the set-1 end → no in-set
+    // predecessor, so it must keep its own time (set start), not jump into the break.
+    { timestamp: sync + 115000, setNum: 2, pointsA: 1,  pointsB: 0, highlight: true,  highlightNote: "Opening" },
+    { timestamp: sync + 130000, setNum: 2, pointsA: 2,  pointsB: 0, highlight: false, highlightNote: null },
+  ];
+  const out = helpers.buildYouTubeChapterList(log, sync, "Home", "Away", 0, []);
+  const hl = out.find((c) => c.text.includes("Opening"));
+  const set2 = out.find((c) => c.text === "Set 2 Start");
+  assert.equal(set2.timeMs, 115000, "Set 2 Start sits at the set's first point");
+  // The highlight's own time == Set 2 Start, so it bumps +1s off that chapter
+  // rather than jumping back ~90s into the inter-set break.
+  assert.equal(hl.timeMs, 116000, "first-point-of-set highlight stays at set start (+1s bump), not shifted into the break");
+});
+
+test("buildYouTubeChapterList: #51 — set-1 highlight near 0:00 does not duplicate the 0:00 chapter", () => {
   const sync = 1700000000000;
   const log = [
     { timestamp: sync + 500,   setNum: 1, pointsA: 1, pointsB: 0, highlight: true,  highlightNote: "Opening ace" },
@@ -102,6 +133,9 @@ test("buildYouTubeChapterList: #51 — first-point set-1 highlight does not crea
   const atZero = out.filter((c) => c.timeMs === 0);
   assert.equal(atZero.length, 1, "only the Set 1 Start chapter should sit at 0:00");
   assert.equal(atZero[0].text, "Set 1 Start", "the single 0:00 chapter is the set start, not the highlight");
+  for (let i = 1; i < out.length; i++) {
+    assert.ok(out[i].timeMs > out[i - 1].timeMs, "chapters strictly ascending");
+  }
 });
 
 // ---------- generateCSV ----------
