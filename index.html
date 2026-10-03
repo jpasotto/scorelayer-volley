@@ -299,7 +299,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.5-beta";
+var APP_VERSION = "3.4.6-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -384,7 +384,7 @@ function describeFirebaseError(err) {
   if (code === "timeout/sign-in") {
     return "Signing in to Live Share took too long. Check your connection and tap Start sharing to retry. Scoring is not affected.";
   }
-  if (code === "timeout/write") {
+  if (code === "timeout/write" || code === "timeout/read") {
     return firebaseConnected === false
       ? "Not connected to the Live Share server. Check your connection and tap Start sharing to retry. Scoring is not affected."
       : "The Live Share server did not confirm in time. Tap Start sharing to retry. Scoring is not affected.";
@@ -442,6 +442,26 @@ function initFirebase() {
     return Promise.resolve(null);
   }
   return firebaseAuthPromise;
+}
+
+// Rejoin after Restore: how to bring the server's point log in line with the
+// restored local one (local is the source of truth). "append" when the server
+// holds a prefix of the local log (the usual case: points scored while the
+// page was being discarded never reached the server), "replace" when the two
+// diverged, "none" when they already match.
+function samePoint(a, b) {
+  return !!a && !!b && a.timestamp === b.timestamp && a.team === b.team &&
+    a.pointsA === b.pointsA && a.pointsB === b.pointsB && a.setNum === b.setNum;
+}
+function planPointResync(serverLog, localLog) {
+  serverLog = serverLog || [];
+  localLog = localLog || [];
+  if (serverLog.length > localLog.length) return { mode: "replace", missing: [] };
+  for (var i = 0; i < serverLog.length; i++) {
+    if (!samePoint(serverLog[i], localLog[i])) return { mode: "replace", missing: [] };
+  }
+  if (serverLog.length === localLog.length) return { mode: "none", missing: [] };
+  return { mode: "append", missing: localLog.slice(serverLog.length) };
 }
 
 // Drop a sign-in that hasn't succeeded yet, so the next initFirebase() starts
@@ -2488,6 +2508,46 @@ var sync = (function() {
     });
   }
 
+  // Restore → rejoin: is this restored matchId still ours to write to?
+  // Resolves { status: "owned", serverLog } | { status: "missing" } |
+  // { status: "not-owner" } | { status: "error" } (network/timeout; retryable).
+  function rejoinMatch(matchId) {
+    if (!FIREBASE_READY || !matchId) return Promise.resolve({ status: "error" });
+    var user = firebase.auth().currentUser;
+    if (!user) return Promise.resolve({ status: "error" });
+    return withTimeout(dbRef("matches/" + matchId).once("value"), FIREBASE_WRITE_TIMEOUT_MS, "timeout/read").then(function(snap) {
+      var v = snap.val();
+      if (!v || !v.meta) return { status: "missing" };
+      if (v.meta.scorekeeperUid !== user.uid) return { status: "not-owner" };
+      var pointsObj = v.points || {};
+      var serverLog = Object.keys(pointsObj).sort().map(function(k) { return pointsObj[k]; });
+      return { status: "owned", serverLog: serverLog };
+    }).catch(function(err) {
+      console.warn("sync.rejoinMatch failed:", err);
+      firebaseLastError = err;
+      return { status: "error" };
+    });
+  }
+
+  // Push whatever the server is missing after a rejoin, plus the full meta
+  // mirror. Fire-and-forget like the other mirror writes: if the socket is
+  // down it stays queued in order ahead of later point writes.
+  function resyncMatch(matchId, serverLog, state) {
+    var plan = planPointResync(serverLog, state.pointLog);
+    var metaPatch = buildMetaPatch(state);
+    if (plan.mode === "replace") return replacePointLog(matchId, state.pointLog, metaPatch);
+    var update = {};
+    plan.missing.forEach(function(p) {
+      var pRef = dbRef("matches/" + matchId + "/points").push();
+      update["matches/" + matchId + "/points/" + pRef.key] = p;
+    });
+    Object.keys(metaPatch).forEach(function(k) {
+      update["matches/" + matchId + "/meta/" + k] = metaPatch[k];
+    });
+    return firebase.database().ref().update(update).then(function() { return true; })
+      .catch(function(err) { console.warn("sync.resyncMatch failed:", err); return false; });
+  }
+
   function pushPoint(matchId, pointEntry, metaPatch) {
     if (!FIREBASE_READY || !matchId) return Promise.resolve(false);
     var pRef = dbRef("matches/" + matchId + "/points").push();
@@ -2604,6 +2664,8 @@ var sync = (function() {
 
   return {
     createMatch: createMatch,
+    rejoinMatch: rejoinMatch,
+    resyncMatch: resyncMatch,
     pushPoint: pushPoint,
     replacePointLog: replacePointLog,
     updateMeta: updateMeta,
@@ -3093,6 +3155,10 @@ function VolleyballTracker() {
   // Bumped on every Start sharing / Cancel, so a late result from an
   // abandoned attempt is ignored instead of flipping state behind the user.
   const shareAttemptRef = useRef(0);
+  // Rejoining the restored match's share after a reload (keeps the parents'
+  // link alive). null | { phase: "pending" | "ok" | "failed", msg?, retry? }
+  const [rejoinStatus, setRejoinStatus] = useState(null);
+  const rejoinAttemptRef = useRef(0);
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
   const [showRenameRow, setShowRenameRow] = useState(false);
@@ -3370,6 +3436,8 @@ function VolleyballTracker() {
     }
     var attempt = ++shareAttemptRef.current;
     function isCurrent() { return shareAttemptRef.current === attempt; }
+    rejoinAttemptRef.current++;
+    setRejoinStatus(null);
     setLiveError(null);
     setSharePending(true);
     // We know the socket is down (e.g. after a previous timeout): kick it
@@ -3409,6 +3477,8 @@ function VolleyballTracker() {
   }, []);
 
   const handleStopShare = useCallback(function() {
+    rejoinAttemptRef.current++;
+    setRejoinStatus(null);
     setState(function(s) {
       if (s.matchId) {
         // Mark match as ended on the server so spectators stop submitting.
@@ -3472,15 +3542,70 @@ function VolleyballTracker() {
     clearAutosave();
   }, []);
 
+  // After a reload (often iOS discarding a backgrounded tab) the autosave
+  // still carries the matchId the parents' link points at. If this device is
+  // still that match's scorekeeper, resume sharing on the same link and push
+  // whatever the server missed; otherwise drop the stale id and say so.
+  const rejoinShare = useCallback(function(matchId) {
+    if (!matchId || !isFirebaseConfigured()) return;
+    var attempt = ++rejoinAttemptRef.current;
+    function isCurrent() { return rejoinAttemptRef.current === attempt; }
+    setRejoinStatus({ phase: "pending" });
+    if (firebaseConnected === false) reconnectFirebase();
+    initFirebase().then(function(uid) {
+      if (!isCurrent()) return null;
+      if (!uid) return { status: "error" };
+      return sync.rejoinMatch(matchId);
+    }).then(function(res) {
+      if (!res || !isCurrent()) return;
+      if (res.status === "owned") {
+        setState(function(s) {
+          // The user may have discarded/replaced the match meanwhile.
+          if (s.matchId !== matchId || s.role === "spectator") return s;
+          sync.resyncMatch(matchId, res.serverLog, s);
+          return { ...s, role: "scorekeeper", isShared: true };
+        });
+        setRejoinStatus({ phase: "ok" });
+        setTimeout(function() {
+          if (isCurrent()) setRejoinStatus(function(r) { return r && r.phase === "ok" ? null : r; });
+        }, 5000);
+        return;
+      }
+      if (res.status === "error") {
+        setRejoinStatus({
+          phase: "failed",
+          retry: matchId,
+          msg: "Couldn't reconnect Live Share" +
+            (firebaseLastError && firebaseLastError.code ? " (" + firebaseLastError.code + ")" : "") +
+            ". Tap Retry to resume the same link. Parents see the last score until then; scoring is not affected.",
+        });
+        return;
+      }
+      // missing / not-owner: this device can't write to the old match any more
+      // (site data cleared, different browser…). Forget it so a new share works.
+      setState(function(s) { return s.matchId === matchId ? { ...s, matchId: null, isShared: false, role: "solo" } : s; });
+      setRejoinStatus({
+        phase: "failed",
+        msg: "The previous Live Share link can't be resumed from this device. Tap Share live to send parents a new link.",
+      });
+    });
+  }, []);
+
+  const dismissRejoin = useCallback(function() {
+    rejoinAttemptRef.current++;
+    setRejoinStatus(null);
+  }, []);
+
   const restoreAutosave = useCallback(function() {
     var saved = window.__scorelayer_autosave;
     if (saved) {
-      setState({ extraSetMode: false, setNumberOffset: 0, ...saved });
+      setState({ ...createInitialState(), extraSetMode: false, setNumberOffset: 0, ...saved, role: "solo", isShared: false });
       setScreen(SCREEN.MATCH);
       delete window.__scorelayer_autosave;
+      if (saved.matchId) rejoinShare(saved.matchId);
     }
     setConfirmAction(null);
-  }, []);
+  }, [rejoinShare]);
 
   // --- Share/download helper ---
   function shareOrDownload(blob, filename, mimeType) {
@@ -3910,6 +4035,19 @@ function VolleyballTracker() {
               </button>
             )}
           </div>
+          {rejoinStatus && state.role !== "spectator" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "var(--surface)", borderBottom: "1px solid var(--surface2)" }}>
+              <div className={"parent-status " + (rejoinStatus.phase === "failed" ? "err" : "ok")} style={{ flex: 1, textAlign: "left" }}>
+                {rejoinStatus.phase === "pending" && "Reconnecting Live Share to the same link…"}
+                {rejoinStatus.phase === "ok" && "● Live Share resumed. Parents' link still works."}
+                {rejoinStatus.phase === "failed" && rejoinStatus.msg}
+              </div>
+              {rejoinStatus.phase === "failed" && rejoinStatus.retry && (
+                <button className="btn btn-small" onClick={function() { rejoinShare(rejoinStatus.retry); }}>Retry</button>
+              )}
+              <button className="btn btn-small" style={{ opacity: 0.7 }} onClick={dismissRejoin} aria-label="Dismiss">✕</button>
+            </div>
+          )}
           {showRenameRow && state.role !== "spectator" && (
             <div style={{ display: "flex", gap: 8, padding: "8px 16px", background: "var(--surface)", borderBottom: "1px solid var(--surface2)" }}>
               <input
