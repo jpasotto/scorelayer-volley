@@ -299,7 +299,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.4-beta";
+var APP_VERSION = "3.4.5-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -333,6 +333,40 @@ var TECH_HIGHLIGHT_TAG_LABELS = (function() {
 var FIREBASE_READY = false;
 var firebaseAuthPromise = null;
 var firebaseLastError = null;
+// RTDB socket state from `.info/connected`; null until the first report.
+var firebaseConnected = null;
+// Every Firebase call the user waits on is raced against a timeout (issue #63):
+// a sign-in or write that never settles must surface as a retryable error,
+// not an endless "Starting…".
+var FIREBASE_SIGNIN_TIMEOUT_MS = 15000;
+var FIREBASE_WRITE_TIMEOUT_MS = 15000;
+// After the tab has been hidden this long, assume iOS may have silently killed
+// the RTDB socket and force a reconnect when it becomes visible again.
+var FIREBASE_RESUME_RECONNECT_MS = 60000;
+
+// Resolves/rejects like `promise`, but rejects with { code, timeout:true }
+// if it hasn't settled within `ms`. The underlying operation is not
+// cancelled — callers must tolerate a late settle.
+function withTimeout(promise, ms, code) {
+  return new Promise(function(resolve, reject) {
+    var done = false;
+    var timer = setTimeout(function() {
+      if (done) return;
+      done = true;
+      var err = new Error("Timed out after " + Math.round(ms / 1000) + "s");
+      err.code = code || "timeout";
+      err.timeout = true;
+      reject(err);
+    }, ms);
+    Promise.resolve(promise).then(function(v) {
+      if (done) return;
+      done = true; clearTimeout(timer); resolve(v);
+    }, function(e) {
+      if (done) return;
+      done = true; clearTimeout(timer); reject(e);
+    });
+  });
+}
 
 function isFirebaseConfigured() {
   return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
@@ -346,6 +380,14 @@ function describeFirebaseError(err) {
   }
   if (code === "PERMISSION_DENIED" || code === "permission-denied") {
     return "Database write rejected. Paste firebase-rules.json into Realtime Database ▸ Rules and click Publish, then try again.";
+  }
+  if (code === "timeout/sign-in") {
+    return "Signing in to Live Share took too long. Check your connection and tap Start sharing to retry. Scoring is not affected.";
+  }
+  if (code === "timeout/write") {
+    return firebaseConnected === false
+      ? "Not connected to the Live Share server. Check your connection and tap Start sharing to retry. Scoring is not affected."
+      : "The Live Share server did not confirm in time. Tap Start sharing to retry. Scoring is not affected.";
   }
   if (code === "auth/network-request-failed") {
     return "Network error reaching Firebase. Check your connection and try again.";
@@ -361,8 +403,24 @@ function initFirebase() {
     return firebaseAuthPromise;
   }
   try {
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    firebaseAuthPromise = firebase.auth().signInAnonymously().then(function(cred) {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      try {
+        firebase.database().ref(".info/connected").on("value", function(snap) {
+          firebaseConnected = !!snap.val();
+        });
+      } catch (e) { /* diagnostics only */ }
+    }
+    // A sign-in that settled late, after an earlier attempt timed out, leaves
+    // the user signed in: reuse it instead of signing in again.
+    var existing = firebase.auth().currentUser;
+    if (existing) {
+      FIREBASE_READY = true;
+      firebaseLastError = null;
+      firebaseAuthPromise = Promise.resolve(existing.uid);
+      return firebaseAuthPromise;
+    }
+    var p = withTimeout(firebase.auth().signInAnonymously(), FIREBASE_SIGNIN_TIMEOUT_MS, "timeout/sign-in").then(function(cred) {
       FIREBASE_READY = true;
       firebaseLastError = null;
       return cred && cred.user ? cred.user.uid : null;
@@ -370,10 +428,13 @@ function initFirebase() {
       console.warn("Firebase anonymous sign-in failed:", err);
       FIREBASE_READY = false;
       firebaseLastError = err;
-      // Don't cache the failed promise — let the user retry after fixing config.
-      firebaseAuthPromise = null;
+      // Never cache a failed or timed-out promise, so a retry starts afresh.
+      // Only clear it if it is still ours (abandonFirebaseSignIn may already
+      // have replaced it with a newer attempt).
+      if (firebaseAuthPromise === p) firebaseAuthPromise = null;
       return null;
     });
+    firebaseAuthPromise = p;
   } catch (err) {
     console.warn("Firebase init failed:", err);
     firebaseLastError = err;
@@ -381,6 +442,25 @@ function initFirebase() {
     return Promise.resolve(null);
   }
   return firebaseAuthPromise;
+}
+
+// Drop a sign-in that hasn't succeeded yet, so the next initFirebase() starts
+// a fresh attempt instead of awaiting a possibly stuck one (Cancel, resume).
+function abandonFirebaseSignIn() {
+  if (!FIREBASE_READY) firebaseAuthPromise = null;
+}
+
+// Force the RTDB client to drop and re-open its socket. Used after the tab
+// was backgrounded for a long time (iOS can kill the socket silently) and
+// before retrying a share when we know we're disconnected.
+function reconnectFirebase() {
+  if (typeof firebase === "undefined" || !firebase.apps || !firebase.apps.length) return;
+  try {
+    firebase.database().goOffline();
+    firebase.database().goOnline();
+  } catch (e) {
+    console.warn("Firebase reconnect failed:", e);
+  }
 }
 
 var HIGHLIGHT_PILL_MS = 8000;
@@ -2030,7 +2110,14 @@ function renderOverlayFrame(ctx, entry, width, height, positionTop, qrBitmap, al
 // Encodes a green-screen score overlay as an MP4 using WebCodecs + mp4-muxer.
 // Uses VFR: one VideoFrame per score change (~100-200 frames total).
 // Returns: { success: true, blob, filename } or { success: false, error, fallback, detail }
-async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress) {
+// If the encoder emits no output for this long while the page is visible, treat
+// it as wedged (issue #63: iOS can reclaim a hardware VideoEncoder after the tab
+// was backgrounded, without ever calling the error callback).
+var ENCODER_STALL_MS = 20000;
+var ENCODER_CANCELLED = "ENCODER_CANCELLED";
+
+// cancelToken (optional): { cancelled: bool } — set cancelled=true to abort.
+async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress, cancelToken) {
   if (typeof VideoEncoder === 'undefined') {
     return { success: false, error: "WebCodecs not supported in this browser.", fallback: true };
   }
@@ -2069,9 +2156,11 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
 
   var encoderError = null;
   var encodeQueueSize = 0;
+  var lastEncoderActivity = Date.now();
   var encoder = new VideoEncoder({
     output: function(chunk, meta) {
       encodeQueueSize--;
+      lastEncoderActivity = Date.now();
       try { muxer.addVideoChunk(chunk, meta); } catch (err) { encoderError = err; }
     },
     error: function(e) { encoderError = e; console.error("VideoEncoder:", e); }
@@ -2085,7 +2174,7 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
   };
   try {
     if (typeof VideoEncoder.isConfigSupported === 'function') {
-      var support = await VideoEncoder.isConfigSupported(baseConfig);
+      var support = await withTimeout(VideoEncoder.isConfigSupported(baseConfig), 10000, "timeout/encoder-config");
       if (!support.supported) {
         return { success: false, error: "H.264 encoding at 1920x1080 is not supported in this browser. Use the Chroma Kit (.zip) fallback instead.", fallback: true };
       }
@@ -2097,6 +2186,31 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
 
   var processedChunks = 0;
 
+  // Throws on encoder error, cancel, a closed encoder, or a stall. Time spent
+  // hidden doesn't count towards the stall: the encoder is legitimately paused.
+  function checkEncoderHealth() {
+    if (encoderError) throw encoderError;
+    if (cancelToken && cancelToken.cancelled) throw new Error(ENCODER_CANCELLED);
+    if (encoder.state === 'closed') throw new Error("The video encoder was closed by the system (the app may have been in the background). Try again.");
+    var now = Date.now();
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      lastEncoderActivity = now;
+    } else if (now - lastEncoderActivity > ENCODER_STALL_MS) {
+      throw new Error("The video encoder stopped responding (the app may have been in the background). Try again.");
+    }
+  }
+  function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+  // Backpressure: wait while the encoder queue is backed up.
+  async function waitForEncoderQueue() {
+    checkEncoderHealth();
+    if (encodeQueueSize <= 5) return;
+    lastEncoderActivity = Date.now();
+    while (encodeQueueSize > 5) {
+      await sleep(10);
+      checkEncoderHealth();
+    }
+  }
+
   try {
     // Blank green frame(s) covering the gap before the first score event.
     if (hasBlank) {
@@ -2106,11 +2220,7 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
       var bts = 0, blankKey = true;
       while (bts < blankEndUs) {
         var bdur = Math.min(MAX_CHUNK_US, blankEndUs - bts);
-        // Backpressure: wait if encoder queue is backed up
-        while (encodeQueueSize > 5) {
-          await new Promise(function(r) { setTimeout(r, 10); });
-          if (encoderError) throw encoderError;
-        }
+        await waitForEncoderQueue();
         var blankVf = new VideoFrame(blankBitmap, { timestamp: bts, duration: bdur });
         encodeQueueSize++;
         encoder.encode(blankVf, { keyFrame: blankKey });
@@ -2157,10 +2267,7 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
           renderOverlayFrame(ctx, entry, WIDTH, HEIGHT, positionTop, qrBitmap, frameAlpha);
           var chunkBitmap = await createImageBitmap(canvas);
 
-          while (encodeQueueSize > 5) {
-            await new Promise(function(r) { setTimeout(r, 10); });
-            if (encoderError) throw encoderError;
-          }
+          await waitForEncoderQueue();
           var vf = new VideoFrame(chunkBitmap, { timestamp: ets, duration: edur });
           encodeQueueSize++;
           encoder.encode(vf, { keyFrame: ekey });
@@ -2177,10 +2284,7 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
         var entryBitmap = await createImageBitmap(canvas);
         while (ets < ete) {
           var edur = Math.min(MAX_CHUNK_US, ete - ets);
-          while (encodeQueueSize > 5) {
-            await new Promise(function(r) { setTimeout(r, 10); });
-            if (encoderError) throw encoderError;
-          }
+          await waitForEncoderQueue();
           var vf = new VideoFrame(entryBitmap, { timestamp: ets, duration: edur });
           encodeQueueSize++;
           encoder.encode(vf, { keyFrame: ekey });
@@ -2194,7 +2298,15 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
       }
     }
 
-    await encoder.flush();
+    // flush() has no timeout of its own: poll it under the same watchdog.
+    var flushed = false, flushError = null;
+    lastEncoderActivity = Date.now();
+    encoder.flush().then(function() { flushed = true; }, function(e) { flushError = e; flushed = true; });
+    while (!flushed) {
+      await sleep(50);
+      if (!flushed) checkEncoderHealth();
+    }
+    if (flushError) throw flushError;
     if (encoderError) throw encoderError;
     encoder.close();
     muxer.finalize();
@@ -2206,6 +2318,9 @@ async function generateOverlayMP4(entries, teamA, teamB, positionTop, onProgress
 
   } catch (err) {
     try { encoder.close(); } catch (x) {}
+    if (err && err.message === ENCODER_CANCELLED) {
+      return { success: false, cancelled: true };
+    }
     return {
       success: false,
       error: err.message || String(err),
@@ -2361,7 +2476,10 @@ var sync = (function() {
       var pRef = dbRef("matches/" + matchId + "/points").push();
       update["matches/" + matchId + "/points/" + pRef.key] = p;
     });
-    return firebase.database().ref().update(update).then(function() {
+    // An RTDB write only resolves on the server ack, which never comes if the
+    // socket is dead. On timeout the write stays queued in the SDK and may
+    // still land later as an orphaned match nobody links to; that's harmless.
+    return withTimeout(firebase.database().ref().update(update), FIREBASE_WRITE_TIMEOUT_MS, "timeout/write").then(function() {
       return matchId;
     }).catch(function(err) {
       console.warn("sync.createMatch failed:", err);
@@ -2889,7 +3007,7 @@ function ShareModalView(props) {
               <div className="parent-status err" style={{ marginTop: 12 }}>{props.liveError}</div>
             )}
             <div className="share-actions" style={{ marginTop: 16 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} disabled={props.sharePending} onClick={props.onClose}>Cancel</button>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={props.onClose}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1 }} disabled={props.sharePending} onClick={function() { props.onStart(); }}>
                 {props.sharePending ? "Starting…" : "Start sharing"}
               </button>
@@ -2933,6 +3051,8 @@ function VolleyballTracker() {
   const [encodeProgress, setEncodeProgress] = useState(0);
   const [overlayPositionTop, setOverlayPositionTop] = useState(true);
   const [mp4Error, setMp4Error] = useState(null);
+  // { cancelled } token for the MP4 encode in progress (Cancel button).
+  const encodeCancelRef = useRef(null);
 
   // CSV import state
   const [csvText, setCsvText] = useState("");
@@ -2970,6 +3090,9 @@ function VolleyballTracker() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [liveError, setLiveError] = useState(null);
   const [sharePending, setSharePending] = useState(false);
+  // Bumped on every Start sharing / Cancel, so a late result from an
+  // abandoned attempt is ignored instead of flipping state behind the user.
+  const shareAttemptRef = useRef(0);
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
   const [showRenameRow, setShowRenameRow] = useState(false);
@@ -3002,6 +3125,28 @@ function VolleyballTracker() {
     }
     // Pre-warm Firebase if configured so the Share button feels instant.
     if (isFirebaseConfigured()) initFirebase();
+  }, []);
+
+  // iOS can suspend a backgrounded tab and silently kill the RTDB socket and
+  // any in-flight sign-in (issue #63). After a long absence, drop an
+  // unfinished sign-in and force the socket to reconnect.
+  useEffect(function() {
+    if (!isFirebaseConfigured()) return undefined;
+    var hiddenAt = null;
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+      } else if (hiddenAt !== null) {
+        var away = Date.now() - hiddenAt;
+        hiddenAt = null;
+        if (away >= FIREBASE_RESUME_RECONNECT_MS) {
+          abandonFirebaseSignIn();
+          reconnectFirebase();
+        }
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return function() { document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
 
   // Spectator: subscribe to RTDB and mirror server state into local state.
@@ -3223,9 +3368,15 @@ function VolleyballTracker() {
       setLiveError("Live Share is not configured in this build.");
       return;
     }
+    var attempt = ++shareAttemptRef.current;
+    function isCurrent() { return shareAttemptRef.current === attempt; }
     setLiveError(null);
     setSharePending(true);
+    // We know the socket is down (e.g. after a previous timeout): kick it
+    // rather than queue another write behind a dead connection.
+    if (firebaseConnected === false) reconnectFirebase();
     initFirebase().then(function(uid) {
+      if (!isCurrent()) return;
       if (!uid) {
         setSharePending(false);
         setLiveError(describeFirebaseError(firebaseLastError) || "Could not sign in to Firebase. Check your network and try again.");
@@ -3234,6 +3385,7 @@ function VolleyballTracker() {
       // Use the most recent state captured via setState's updater so the meta seeds correctly.
       setState(function(s) {
         sync.createMatch(s).then(function(matchId) {
+          if (!isCurrent()) return;
           setSharePending(false);
           if (!matchId) {
             setLiveError(describeFirebaseError(firebaseLastError) || "Could not start share. Check your network and try again.");
@@ -3244,6 +3396,16 @@ function VolleyballTracker() {
         return s;
       });
     });
+  }, []);
+
+  // Cancel / backdrop tap. While a share is starting this also abandons the
+  // attempt, so reopening the modal offers a fresh Start sharing.
+  const handleCloseShareModal = useCallback(function() {
+    shareAttemptRef.current++;
+    setSharePending(false);
+    abandonFirebaseSignIn();
+    setShareModalOpen(false);
+    setLiveError(null);
   }, []);
 
   const handleStopShare = useCallback(function() {
@@ -3456,9 +3618,12 @@ function VolleyballTracker() {
     setMp4Error(null);
     trackEvent('Export', 'MP4Start');
 
+    var token = { cancelled: false };
+    encodeCancelRef.current = token;
     var result = await generateOverlayMP4(entries, state.teamA, state.teamB, overlayPositionTop, function(pct) {
       setEncodeProgress(pct);
-    });
+    }, token);
+    if (encodeCancelRef.current === token) encodeCancelRef.current = null;
 
     setIsEncoding(false);
 
@@ -3467,8 +3632,8 @@ function VolleyballTracker() {
       trackEvent('Export', 'MP4Success');
       shareOrDownload(result.blob, result.filename, "video/mp4");
       triggerExportDonate();
-    } else {
-      setMp4Error(result);
+    } else if (!result.cancelled) {
+      setMp4Error({ ...result, retry: "match" });
     }
   }
 
@@ -3510,10 +3675,13 @@ function VolleyballTracker() {
     setCsvEncodeProgress(0);
     trackEvent('Export', 'MP4Start');
 
+    var token = { cancelled: false };
+    encodeCancelRef.current = token;
     var result = await generateOverlayMP4(
       finalResult.entries, finalResult.teamA, finalResult.teamB,
-      csvPositionTop, function(pct) { setCsvEncodeProgress(pct); }
+      csvPositionTop, function(pct) { setCsvEncodeProgress(pct); }, token
     );
+    if (encodeCancelRef.current === token) encodeCancelRef.current = null;
 
     setCsvIsEncoding(false);
 
@@ -3522,9 +3690,20 @@ function VolleyballTracker() {
       trackEvent('Export', 'MP4Success');
       shareOrDownload(result.blob, result.filename, "video/mp4");
       triggerExportDonate();
-    } else {
-      setMp4Error(result);
+    } else if (!result.cancelled) {
+      setMp4Error({ ...result, retry: "csv" });
     }
+  }
+
+  function handleCancelEncode() {
+    if (encodeCancelRef.current) encodeCancelRef.current.cancelled = true;
+  }
+
+  function handleRetryMP4() {
+    var which = mp4Error && mp4Error.retry;
+    setMp4Error(null);
+    if (which === "csv") handleCSVGenerateMP4();
+    else handleGenerateMP4();
   }
 
   function handleCopy() {
@@ -3656,6 +3835,9 @@ function VolleyballTracker() {
                 <div className="progress-bar-track">
                   <div className="progress-bar-fill" style={{ width: csvEncodeProgress + "%" }} />
                 </div>
+              )}
+              {csvIsEncoding && (
+                <button className="btn btn-small" onClick={handleCancelEncode}>Cancel</button>
               )}
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
                 <button className="btn btn-secondary" onClick={function() {
@@ -4092,6 +4274,9 @@ function VolleyballTracker() {
                 <div className="progress-bar-fill" style={{ width: encodeProgress + "%" }} />
               </div>
             )}
+            {isEncoding && (
+              <button className="btn btn-small" onClick={handleCancelEncode}>Cancel</button>
+            )}
 
             <div className="format-info" style={{ fontSize: 11, textAlign: "center" }}>
               CSV is auto-downloaded first as a safety backup. If MP4 generation fails, use the Chroma Kit or import the CSV later.
@@ -4123,7 +4308,7 @@ function VolleyballTracker() {
           state={state}
           liveError={liveError}
           sharePending={sharePending}
-          onClose={function() { setShareModalOpen(false); setLiveError(null); }}
+          onClose={handleCloseShareModal}
           onStart={handleStartShare}
           onStop={handleStopShare}
         />
@@ -4156,6 +4341,9 @@ function VolleyballTracker() {
             {mp4Error.detail && <div className="error-detail">{mp4Error.detail}</div>}
             <div className="error-detail">{mp4Error.error}</div>
             <div className="error-actions">
+              {mp4Error.retry && (
+                <button className="btn btn-success" onClick={handleRetryMP4}>&#8635; Try again</button>
+              )}
               {state.syncTimestamp && (
                 <button className="btn btn-secondary" onClick={function() { setMp4Error(null); downloadChromaKit(); }}>&#8595; Download Chroma Kit (.zip)</button>
               )}

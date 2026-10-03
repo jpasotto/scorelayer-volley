@@ -26,6 +26,10 @@ const src = html.slice(begin, end);
 
 const sandbox = {
   console,
+  // Timers for withTimeout(); tests that exercise Firebase paths swap in a
+  // stub `firebase` object on `helpers` themselves.
+  setTimeout,
+  clearTimeout,
   window: {},
   document: {},
   navigator: {},

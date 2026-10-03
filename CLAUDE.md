@@ -21,6 +21,8 @@ node --test tests/*.test.mjs
 
 The harness (`tests/harness.mjs`) reads `index.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
 
+`tests/livesync.test.mjs` covers the Live Share timeout/retry behaviour of `withTimeout` and `initFirebase` against a stubbed `firebase` (issue #63).
+
 Fixtures live under `tests/fixtures/`. CI runs the suite on every PR via `.github/workflows/test.yml`.
 
 ## Architecture
@@ -70,6 +72,8 @@ Live Share is built into `index.html`. With Firebase configured, a scorekeeper c
 - `parentHighlights/{pushId}` — any signed-in user appends `{ name?, note?, tag?, quick, snapshot?, clientTimestamp, serverTimestamp, deleted }`. `tag` is one of `ace|block|kill|dig|set|error` (optional one-tap category). `quick:true` marks note-less one-tap submissions. `snapshot` freezes the live score (`pointsA, pointsB, setsA, setsB, setNum`) at submission time so the feed and the in-video overlay can show "S2 14–12" without depending on later corrections. Scorekeeper alone can flip `deleted:true` to hide an entry.
 
 **Security rules:** see `firebase-rules.json`. Paste into the Firebase console under Realtime Database ▸ Rules. They restrict `meta/` and `points/` writes to the scorekeeper UID, cap parent notes at 140 chars and names at 40 chars, and only allow the scorekeeper to set `deleted`.
+
+**Reliability (issue #63):** every Firebase call the user waits on is wrapped in `withTimeout` (sign-in and `createMatch`, 15 s). A sign-in promise is only cached once it succeeds; `abandonFirebaseSignIn()` drops an unfinished one (Share modal Cancel, and resume after the tab was hidden ≥60 s, which also calls `reconnectFirebase()`). `generateOverlayMP4` has a stall watchdog (`ENCODER_STALL_MS`, paused while the page is hidden) covering backpressure and `flush()`, plus a cancel token.
 
 **Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 
