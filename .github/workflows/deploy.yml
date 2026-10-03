@@ -3,6 +3,16 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ["main"]
+    # Skip deploys for changes that don't affect the served app.
+    # README.md is NOT excluded: the app fetches it at runtime as the in-app manual.
+    # Order matters: later patterns override earlier ones.
+    paths:
+      - "**"
+      - "!prompts/**"
+      - "!tests/**"
+      - "!.github/**"
+      - "!**/*.md"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
