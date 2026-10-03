@@ -143,3 +143,41 @@ test("describeFirebaseError: timeouts produce retryable, scoring-is-safe message
   helpers.firebaseConnected = true;
   assert.match(helpers.describeFirebaseError({ code: "timeout/write" }), /did not confirm/);
 });
+
+// ---------- planPointResync (rejoin after Restore) ----------
+
+const pt = (i, team = "A") => ({ team, pointsA: i, pointsB: 0, setNum: 1, timestamp: 1000 + i });
+const log = (n) => Array.from({ length: n }, (_, i) => pt(i + 1));
+
+test("planPointResync: identical logs need nothing", () => {
+  const out = helpers.planPointResync(log(5), log(5));
+  assert.equal(out.mode, "none");
+  assert.equal(out.missing.length, 0);
+});
+
+test("planPointResync: server holding a prefix gets only the missing tail appended", () => {
+  const out = helpers.planPointResync(log(3), log(5));
+  assert.equal(out.mode, "append");
+  assert.deepEqual(out.missing.map((p) => p.timestamp), [1004, 1005]);
+});
+
+test("planPointResync: empty server log appends everything", () => {
+  const out = helpers.planPointResync([], log(2));
+  assert.equal(out.mode, "append");
+  assert.equal(out.missing.length, 2);
+});
+
+test("planPointResync: diverged logs (local undo) are replaced", () => {
+  const local = log(3);
+  local[2] = pt(3, "B");
+  assert.equal(helpers.planPointResync(log(3), local).mode, "replace");
+});
+
+test("planPointResync: server ahead of local is replaced by the local log", () => {
+  assert.equal(helpers.planPointResync(log(4), log(3)).mode, "replace");
+});
+
+test("describeFirebaseError: a read timeout reads like a write timeout", () => {
+  helpers.firebaseConnected = false;
+  assert.match(helpers.describeFirebaseError({ code: "timeout/read" }), /Not connected/);
+});

@@ -44,6 +44,8 @@ With Firebase configured, a scorekeeper can publish the match live so spectators
 
 **Score snapshot:** the live score is frozen at submission time, so the in-video overlay and the spectator feed can show "S2 14–12" even if the scorekeeper corrects the score later.
 
+**If the page reloads mid-match** (iOS often does this to a tab left in the background): tap **Restore** and the app reconnects Live Share to the **same link** you already sent, then catches the parents up on any points they missed. If this phone can no longer resume it (site data cleared, a different browser), you'll be told to tap **Share live** and send a new link.
+
 **If Live Share can't connect:** starting a share gives up after about 15 seconds with an error and a retry, and **Cancel** always works. Scoring and autosave never depend on the connection. If the app sat in the background for a while, it reconnects by itself when you come back.
 
 **If the MP4 overlay gets stuck:** tap **Cancel** under the progress bar at any time. If the phone's video encoder stops responding (typically after switching apps mid-export), the export stops with an error and a **Try again** button; the Chroma Kit and CSV fallbacks stay available.
@@ -115,6 +117,7 @@ Single `index.html` file — React 18 + Babel Standalone (CDN), `mp4-muxer` ES m
 
 | Version | What shipped |
 |---|---|
+| **v3.4.6-beta** | Restoring a match after a reload resumes Live Share on the same parents' link (ownership checked, missed points re-sent) instead of silently freezing it |
 | **v3.4.5-beta** | Live Share and MP4 export can no longer hang: Firebase sign-in and match creation time out with a retryable error, Cancel is always enabled and abandons the attempt, long-backgrounded tabs reconnect on resume, and the MP4 encoder has a stall watchdog plus Cancel / Try again (#63) |
 | **v3.4.1-beta** | Sync control on the setup screen (sync before typing team names), in-match team rename for scorekeeper/solo with Live Share mirroring to spectators |
 | **v3.4.0-beta** | In-app manual (`?` button → fetches README, renders Features + Usage + Live Share via marked), donate plumbing (Revolut button in BETA modal, manual, and post-export nudge), blue `?` / donate label styling, README manual sentinels (closes #42, #43, #45) |
