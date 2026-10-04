@@ -27,6 +27,18 @@
   })();
 </script>
 <!-- End Matomo -->
+<script>
+// React's scheduler prefers setImmediate over MessageChannel when it exists.
+// iOS Safari can lose a MessageChannel message while the tab is suspended;
+// React then never runs non-urgent work again: async results never render
+// ("Starting…" forever, MP4 progress frozen) and queued state updates are
+// replayed on every tap, re-stamping every point with the latest time.
+// Timers survive suspension (they just fire late), so route the scheduler
+// through setTimeout. Must run before React is loaded.
+if (typeof window.setImmediate !== "function") {
+  window.setImmediate = function(cb) { return setTimeout(cb, 0); };
+}
+</script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -299,7 +311,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.6-beta";
+var APP_VERSION = "3.4.7-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -343,6 +355,8 @@ var FIREBASE_WRITE_TIMEOUT_MS = 15000;
 // After the tab has been hidden this long, assume iOS may have silently killed
 // the RTDB socket and force a reconnect when it becomes visible again.
 var FIREBASE_RESUME_RECONNECT_MS = 60000;
+// How often the render watchdog checks that non-urgent renders still happen.
+var RENDER_WATCHDOG_MS = 5000;
 
 // Resolves/rejects like `promise`, but rejects with { code, timeout:true }
 // if it hasn't settled within `ms`. The underlying operation is not
@@ -3155,6 +3169,35 @@ function VolleyballTracker() {
   // Bumped on every Start sharing / Cancel, so a late result from an
   // abandoned attempt is ignored instead of flipping state behind the user.
   const shareAttemptRef = useRef(0);
+  // Latest committed state, for async callbacks. Side effects must not live
+  // inside setState updaters: React may run an updater more than once.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  // Keys of non-idempotent mirror writes already sent (pushPoint), so a
+  // replayed updater never pushes the same point twice.
+  const mirroredRef = useRef(new Set());
+
+  // Render watchdog: a non-urgent update is sent every few seconds from a
+  // timer; if one never renders while the page is visible, React's scheduler
+  // is stuck (taps still render, async results don't). Say so and offer a
+  // reload: the autosave + Restore flow brings the match back intact.
+  const [renderTick, setRenderTick] = useState(0);
+  const [renderStalled, setRenderStalled] = useState(false);
+  const renderTickSeenRef = useRef(0);
+  useEffect(function() { renderTickSeenRef.current = renderTick; }, [renderTick]);
+  useEffect(function() {
+    var sent = 0;
+    var id = setInterval(function() {
+      if (document.visibilityState !== "visible") { sent = renderTickSeenRef.current; return; }
+      if (sent > renderTickSeenRef.current) {
+        ReactDOM.flushSync(function() { setRenderStalled(true); });
+        return;
+      }
+      sent = renderTickSeenRef.current + 1;
+      setRenderTick(sent);
+    }, RENDER_WATCHDOG_MS);
+    return function() { clearInterval(id); };
+  }, []);
   // Rejoining the restored match's share after a reload (keeps the parents'
   // link alive). null | { phase: "pending" | "ok" | "failed", msg?, retry? }
   const [rejoinStatus, setRejoinStatus] = useState(null);
@@ -3306,23 +3349,34 @@ function VolleyballTracker() {
     try { action(); } catch (e) { console.warn("mirror failed:", e); }
   }
 
+  function mirrorOnce(key, s, action) {
+    if (mirroredRef.current.has(key)) return;
+    if (!s.isShared || s.role !== "scorekeeper" || !s.matchId) return;
+    mirroredRef.current.add(key);
+    mirrorIfShared(s, action);
+  }
+
   const handleSync = useCallback(function() {
+    if (stateRef.current.syncTimestamp) {
+      // Already synced — show confirmation before overwriting
+      setConfirmAction("resync");
+      return;
+    }
+    // Captured at tap time, never inside the updater (React may re-run it later).
+    var now = Date.now();
     setState(function(s) {
-      if (s.syncTimestamp) {
-        // Already synced — show confirmation before overwriting
-        setTimeout(function() { setConfirmAction("resync"); }, 0);
-        return s;
-      }
-      var next = { ...s, syncTimestamp: Date.now() };
-      mirrorIfShared(s, function() { sync.updateMeta(s.matchId, { syncTimestamp: next.syncTimestamp }); });
-      return next;
+      if (s.syncTimestamp) return s;
+      return { ...s, syncTimestamp: now };
     });
+    mirrorIfShared(stateRef.current, function() { sync.updateMeta(stateRef.current.matchId, { syncTimestamp: now }); });
   }, []);
 
   const scorePoint = useCallback(function(team) {
+    // Captured at tap time: the updater below must be pure, because React
+    // replays queued updaters on later renders (see the setImmediate shim).
+    var now = Date.now();
     setState(function(s) {
       if (s.matchOver) return s;
-      var now = Date.now();
       var pointsA = s.pointsA, pointsB = s.pointsB, setsA = s.setsA, setsB = s.setsB, currentSet = s.currentSet;
       if (team === "A") pointsA++; else pointsB++;
       var target = getTargetPoints(setsA, setsB);
@@ -3344,23 +3398,23 @@ function VolleyballTracker() {
         }
       }
       var next = { ...s, pointsA: pointsA, pointsB: pointsB, setsA: setsA, setsB: setsB, currentSet: currentSet, setHistory: newSetHistory, pointLog: newLog, matchOver: matchOver };
-      mirrorIfShared(s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
+      mirrorOnce("point:" + now + ":" + team, s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
       return next;
     });
   }, []);
 
   const reducePoint = useCallback(function(team) {
+    var now = Date.now();
     setState(function(s) {
       if (s.matchOver) return s;
       var pts = team === "A" ? s.pointsA : s.pointsB;
       if (pts <= 0) return s;
-      var now = Date.now();
       var newPA = team === "A" ? s.pointsA - 1 : s.pointsA;
       var newPB = team === "B" ? s.pointsB - 1 : s.pointsB;
       var newPoint = { team: team, pointsA: newPA, pointsB: newPB, setsA: s.setsA, setsB: s.setsB, setNum: s.currentSet, timestamp: now, wallClock: now, correction: true, highlight: false, highlightNote: null, setWon: false };
       var newLog = s.pointLog.concat([newPoint]);
       var next = { ...s, pointsA: newPA, pointsB: newPB, pointLog: newLog };
-      mirrorIfShared(s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
+      mirrorOnce("correction:" + now + ":" + team, s, function() { sync.pushPoint(s.matchId, newPoint, sync.buildMetaPatch(next)); });
       return next;
     });
   }, []);
@@ -3450,18 +3504,16 @@ function VolleyballTracker() {
         setLiveError(describeFirebaseError(firebaseLastError) || "Could not sign in to Firebase. Check your network and try again.");
         return;
       }
-      // Use the most recent state captured via setState's updater so the meta seeds correctly.
-      setState(function(s) {
-        sync.createMatch(s).then(function(matchId) {
-          if (!isCurrent()) return;
-          setSharePending(false);
-          if (!matchId) {
-            setLiveError(describeFirebaseError(firebaseLastError) || "Could not start share. Check your network and try again.");
-            return;
-          }
-          setState(function(s2) { return { ...s2, role: "scorekeeper", isShared: true, matchId: matchId }; });
-        });
-        return s;
+      // Latest committed state seeds the match (never call createMatch from
+      // inside a setState updater: a replay would create a second match).
+      sync.createMatch(stateRef.current).then(function(matchId) {
+        if (!isCurrent()) return;
+        setSharePending(false);
+        if (!matchId) {
+          setLiveError(describeFirebaseError(firebaseLastError) || "Could not start share. Check your network and try again.");
+          return;
+        }
+        setState(function(s2) { return { ...s2, role: "scorekeeper", isShared: true, matchId: matchId }; });
       });
     });
   }, []);
@@ -3559,10 +3611,12 @@ function VolleyballTracker() {
     }).then(function(res) {
       if (!res || !isCurrent()) return;
       if (res.status === "owned") {
+        var cur = stateRef.current;
+        // The user may have discarded/replaced the match meanwhile.
+        if (cur.matchId !== matchId || cur.role === "spectator") { setRejoinStatus(null); return; }
+        sync.resyncMatch(matchId, res.serverLog, cur);
         setState(function(s) {
-          // The user may have discarded/replaced the match meanwhile.
           if (s.matchId !== matchId || s.role === "spectator") return s;
-          sync.resyncMatch(matchId, res.serverLog, s);
           return { ...s, role: "scorekeeper", isShared: true };
         });
         setRejoinStatus({ phase: "ok" });
@@ -4438,6 +4492,20 @@ function VolleyballTracker() {
           parentSubmitStatus={parentSubmitStatus}
           onSubmitHighlight={handleSubmitParentHighlight}
         />
+      )}
+
+      {/* ========== RENDER STALL BANNER ========== */}
+      {renderStalled && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog">
+            <h3>The app stopped updating</h3>
+            <p>This can happen after the phone kept the page in the background. Your match is saved: tap <strong>Reload</strong>, then <strong>Restore</strong>.</p>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={function() { ReactDOM.flushSync(function() { setRenderStalled(false); }); }}>Dismiss</button>
+              <button className="btn btn-primary" onClick={function() { if (stateRef.current.matchStarted) autosaveState(stateRef.current); window.location.reload(); }}>Reload</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ========== SHARE MODAL ========== */}
