@@ -119,6 +119,7 @@ Single `index.html` file — React 18 + Babel Standalone (CDN), `mp4-muxer` ES m
 
 | Version | What shipped |
 |---|---|
+| **v3.4.8-beta** | CSV import rejects a file whose points all share the same time (instead of rendering an hour of green), and warns about runs of same-time points |
 | **v3.4.7-beta** | Fix point times all collapsing to the same moment after iOS suspended the page (which also froze Live Share "Starting…" and MP4 progress): React no longer schedules through MessageChannel, point/sync times are taken at the tap, Firebase writes can't be repeated, and a watchdog offers Reload if rendering ever stalls |
 | **v3.4.6-beta** | Restoring a match after a reload resumes Live Share on the same parents' link (ownership checked, missed points re-sent) instead of silently freezing it |
 | **v3.4.5-beta** | Live Share and MP4 export can no longer hang: Firebase sign-in and match creation time out with a retryable error, Cancel is always enabled and abandons the attempt, long-backgrounded tabs reconnect on resume, and the MP4 encoder has a stall watchdog plus Cancel / Try again (#63) |

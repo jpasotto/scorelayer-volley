@@ -531,3 +531,36 @@ function parseSrtTime(s) {
   const [h, m, sec] = hms.split(":").map(Number);
   return h * 3_600_000 + m * 60_000 + sec * 1000 + Number(mmm);
 }
+
+// ---------- parseCSVToEntries: unusable timing (2026-10-03 incident) ----------
+
+const CSV_HEADER = "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay";
+const csvRow = (i, offset, a, b) =>
+  `${i},13:55:34,${offset},1,${a},${b},0,0,A,N,N,"","T","A ${a}-${b} B"`;
+
+test("parseCSVToEntries: all points at the same time → clear error, no entries", () => {
+  const rows = [CSV_HEADER];
+  for (let i = 1; i <= 10; i++) rows.push(csvRow(i, 3655267 + (i > 5 ? 1 : 0), i, 0));
+  const out = helpers.parseCSVToEntries(rows.join("\n"));
+  assert.ok(out.error, "expected an error");
+  assert.match(out.error, /no usable timing/);
+  assert.equal(out.entries, undefined);
+});
+
+test("parseCSVToEntries: a run of same-time points → warning naming the rows, other points still exported", () => {
+  const rows = [CSV_HEADER];
+  rows.push(csvRow(1, 10000, 1, 0), csvRow(2, 40000, 2, 0), csvRow(3, 70000, 3, 0));
+  for (let i = 4; i <= 7; i++) rows.push(csvRow(i, 95000, i, 0));
+  const out = helpers.parseCSVToEntries(rows.join("\n"));
+  assert.equal(out.error, undefined);
+  assert.match(out.timingWarning, /rows 4–7/);
+  assert.ok(out.entries.length > 0);
+});
+
+test("parseCSVToEntries: normally spaced points → no warning", () => {
+  const rows = [CSV_HEADER];
+  for (let i = 1; i <= 6; i++) rows.push(csvRow(i, i * 25000, i, 0));
+  const out = helpers.parseCSVToEntries(rows.join("\n"));
+  assert.equal(out.error, undefined);
+  assert.equal(out.timingWarning, undefined);
+});

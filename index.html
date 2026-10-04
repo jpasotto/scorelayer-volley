@@ -311,7 +311,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.7-beta";
+var APP_VERSION = "3.4.8-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -1722,6 +1722,36 @@ function parseClockToMs(clock) {
   var h = parseInt(m[1], 10), min = parseInt(m[2], 10), s = m[3] ? parseInt(m[3], 10) : 0;
   return ((h * 60 + min) * 60 + s) * 1000;
 }
+// Points whose times are this close count as "the same moment": no rally is
+// shorter than a second. Guards against CSVs whose timing was lost (the
+// 2026-10-03 match exported every point at one millisecond, and the MP4 came
+// out as an hour of green with no scores).
+var CSV_SAME_TIME_MS = 1000;
+var CSV_SAME_TIME_RUN = 3;
+
+function checkCSVTiming(dataRows) {
+  if (dataRows.length < 2) return {};
+  var offsets = dataRows.map(function(d) { return d.offset_ms; });
+  var span = Math.max.apply(null, offsets) - Math.min.apply(null, offsets);
+  if (span < CSV_SAME_TIME_MS) {
+    return { error: "This CSV has no usable timing: all " + dataRows.length +
+      " points have the same time, so the video would show no scores. The times were lost when the match was recorded; this file can't produce an overlay." };
+  }
+  // Runs of consecutive points at (almost) the same time: their scores would
+  // flash by in a few milliseconds instead of showing in the video.
+  var runs = [], start = 0;
+  for (var i = 1; i <= dataRows.length; i++) {
+    var same = i < dataRows.length && Math.abs(dataRows[i].offset_ms - dataRows[i - 1].offset_ms) < CSV_SAME_TIME_MS;
+    if (!same) {
+      if (i - start >= CSV_SAME_TIME_RUN) runs.push(dataRows[start].rowLabel + "–" + dataRows[i - 1].rowLabel);
+      start = i;
+    }
+  }
+  if (runs.length === 0) return {};
+  return { warning: "Some points share the same time (rows " + runs.join(", ") +
+    "), so their scores won't appear in the video. The rest of the match will." };
+}
+
 function parseCSVToEntries(csvText, matchTitle) {
   var lines = csvText.trim().split("\n");
   if (lines.length < 2) return { error: "CSV must have a header row and at least one data row." };
@@ -1740,6 +1770,7 @@ function parseCSVToEntries(csvText, matchTitle) {
   var iHL = cols.indexOf("Highlight");
   var iHLNote = cols.indexOf("HighlightNote");
   var iWall = cols.indexOf("WallClock");
+  var iIndex = cols.indexOf("Index");
 
   if (iOffset === -1 || iSet === -1 || iPA === -1 || iPB === -1) {
     return { error: "CSV missing required columns: VideoOffset_ms, Set, PointsA, PointsB" };
@@ -1780,6 +1811,7 @@ function parseCSVToEntries(csvText, matchTitle) {
       if (offset < 0) offset += 24 * 3600 * 1000; // match crossed midnight
     }
     dataRows.push({
+      rowLabel: iIndex !== -1 && row[iIndex] ? row[iIndex].trim() : String(i),
       offset_ms: offset,
       setNum: parseInt(row[iSet], 10) || 1,
       pointsA: parseInt(row[iPA], 10) || 0,
@@ -1792,6 +1824,9 @@ function parseCSVToEntries(csvText, matchTitle) {
   }
 
   if (dataRows.length === 0) return { error: "No valid data rows found in CSV (need a numeric VideoOffset_ms or a WallClock time on each point)." };
+
+  var timing = checkCSVTiming(dataRows);
+  if (timing.error) return { error: timing.error };
 
   // Read MatchTitle from CSV if no explicit title provided
   var csvTitle = "";
@@ -1918,7 +1953,7 @@ function parseCSVToEntries(csvText, matchTitle) {
 
   entries = entries.filter(function(e) { return e.end > e.start; });
   var highlightCount = pointLog.filter(function(p) { return p.highlight; }).length;
-  return { entries: entries, pointLog: pointLog, highlightCount: highlightCount, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
+  return { timingWarning: timing.warning, entries: entries, pointLog: pointLog, highlightCount: highlightCount, teamA: teamA, teamB: teamB, rowCount: dataRows.length, csvTitle: csvTitle };
 }
 
 function parseCSVRow(line) {
@@ -3990,6 +4025,9 @@ function VolleyballTracker() {
                 Parsed <strong>{csvParseResult.rowCount}</strong> score entries for <strong>{csvParseResult.teamA}</strong> vs <strong>{csvParseResult.teamB}</strong>.
                 Duration: ~{Math.ceil(csvParseResult.entries[csvParseResult.entries.length - 1].end)}s
               </div>
+              {csvParseResult.timingWarning && (
+                <div className="parsed-info parsed-error">{csvParseResult.timingWarning}</div>
+              )}
               <div className="input-group" style={{ gap: 4 }}>
                 <label style={{ fontSize: 11, color: "var(--text-dim)", letterSpacing: 1 }}>OVERLAY TITLE</label>
                 <input
