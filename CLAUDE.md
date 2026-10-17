@@ -83,6 +83,8 @@ Live Share is built into `index.html`. With Firebase configured, a scorekeeper c
 
 **Spectator screen wake lock:** `SpectatorView` holds a Screen Wake Lock (`createWakeLock`, inside the tested sentinel region) so a propped-up tablet doesn't dim or lock. The browser drops the lock when the tab is hidden, so it is re-requested on `visibilitychange`. Where `navigator.wakeLock` is missing, the view tells the user to set Auto-Lock to Never. Covered by `tests/wakelock.test.mjs`.
 
+**Spectator tablet layout:** `.app` is a 480px phone column on every screen; on the spectator screen it gets `.is-spectator` (no max-width). From 600px wide the score scales with the viewport (`vw`/`vh`); in landscape at ≥900px the screen becomes two columns (`.spectator-main` scoreboard, `.spectator-side` previous sets, highlight form and list). Below 600px the phone layout is unchanged (the wrappers are `display: contents`, DOM order is restored with `order`). Scorekeeper screens are still phone-width.
+
 **Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 
 **Parent highlights in exports:** YouTube chapters, CSV, Highlights SRT, **and** the in-video score overlay (`buildOverlayEntries`) all merge accepted (non-deleted) parent submissions in addition to the scorekeeper's `★` highlights. Parent timestamps come from the submitting client's `Date.now()` at button-press, so they align with the same `syncTimestamp` the scorekeeper used. For the overlay, each parent highlight whose offset falls inside an existing score entry flips that entry's `highlight=true` and appends `[tag · name · note]` to `highlightNote` (joined onto any existing scorekeeper note with ` + `).
