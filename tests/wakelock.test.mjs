@@ -20,7 +20,7 @@ function fakeEnv({ visibility = "visible", reject = false } = {}) {
     wakeLock: {
       request: async () => {
         env.requests++;
-        if (reject) throw new Error("NotAllowedError");
+        if (reject) throw denied();
         const rel = [];
         const s = {
           released: false,
@@ -38,6 +38,7 @@ function fakeEnv({ visibility = "visible", reject = false } = {}) {
   };
   return env;
 }
+const denied = () => Object.assign(new Error("denied"), { name: "NotAllowedError" });
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test("start acquires the lock and reports held", async () => {
@@ -102,4 +103,73 @@ test("no request while hidden; unsupported and denied are harmless", async () =>
   lock.start();
   await tick();
   assert.equal(lock.isHeld(), false);
+});
+
+function fakeVideo({ failPlay = false } = {}) {
+  const v = { plays: 0, stops: 0, on: false };
+  v.play = async () => {
+    v.plays++;
+    if (failPlay) throw denied();
+    v.on = true;
+  };
+  v.stop = () => { v.stops++; v.on = false; };
+  return v;
+}
+
+test("denied native lock falls back to video and reports the reason", async () => {
+  const env = fakeEnv({ reject: true });
+  const video = fakeVideo();
+  const infos = [];
+  const lock = helpers.createWakeLock(env.nav, env.doc, { fallback: video, onStatus: (i) => infos.push(i) });
+  lock.start();
+  await tick();
+  assert.equal(lock.isHeld(), true);
+  const last = infos[infos.length - 1];
+  assert.equal(last.mode, "video");
+  assert.equal(last.held, true);
+  assert.match(last.error, /NotAllowedError/);
+});
+
+test("unsupported browser uses the video fallback", async () => {
+  const video = fakeVideo();
+  const lock = helpers.createWakeLock({}, fakeEnv().doc, { fallback: video });
+  lock.start();
+  await tick();
+  assert.equal(lock.isHeld(), true);
+  assert.equal(video.on, true);
+});
+
+test("video autoplay refused, then a user-gesture retry succeeds", async () => {
+  const env = fakeEnv({ reject: true });
+  const video = fakeVideo({ failPlay: true });
+  const infos = [];
+  const lock = helpers.createWakeLock(env.nav, env.doc, { fallback: video, onStatus: (i) => infos.push(i) });
+  lock.start();
+  await tick();
+  assert.equal(lock.isHeld(), false);
+  assert.match(infos[infos.length - 1].error, /video: .*NotAllowedError/);
+  video.play = async () => { video.on = true; };
+  lock.retry();
+  await tick();
+  assert.equal(lock.isHeld(), true);
+});
+
+test("native lock taking over stops the video; stop() stops everything", async () => {
+  const env = fakeEnv();
+  let deny = true;
+  const real = env.nav.wakeLock.request;
+  env.nav.wakeLock.request = async (t) => { if (deny) throw denied(); return real(t); };
+  const video = fakeVideo();
+  const lock = helpers.createWakeLock(env.nav, env.doc, { fallback: video });
+  lock.start();
+  await tick();
+  assert.equal(video.on, true);
+  deny = false;
+  lock.retry();
+  await tick();
+  assert.equal(video.on, false);
+  assert.equal(lock.isHeld(), true);
+  lock.stop();
+  assert.equal(lock.isHeld(), false);
+  assert.equal(env.sentinels[0].released, true);
 });
