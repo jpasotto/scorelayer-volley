@@ -21,6 +21,8 @@ node --test tests/*.test.mjs
 
 The harness (`tests/harness.mjs`) reads `index.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
 
+`tests/wakelock.test.mjs` covers the spectator wake-lock controller.
+
 `tests/livesync.test.mjs` covers the Live Share timeout/retry behaviour of `withTimeout` and `initFirebase` against a stubbed `firebase` (issue #63).
 
 Fixtures live under `tests/fixtures/`. CI runs the suite on every PR via `.github/workflows/test.yml`.
@@ -78,6 +80,10 @@ Live Share is built into `index.html`. With Firebase configured, a scorekeeper c
 **State updaters must be pure (2026-10-03 incident):** React may run a `setState(function(s) {…})` updater more than once, and replays it on later renders while an older non-urgent update is still queued. Take `Date.now()` and do Firebase writes **outside** updaters (use `stateRef.current` in async callbacks; `mirrorOnce` for non-idempotent pushes). A `setImmediate` shim before React loads keeps the scheduler off `MessageChannel`, which iOS Safari can lose while the tab is suspended, and a render watchdog (`RENDER_WATCHDOG_MS`) offers Reload if non-urgent renders still stall.
 
 **Rejoin after Restore:** the autosave keeps `matchId`, but `role`/`isShared` are not persisted. `restoreAutosave` calls `rejoinShare`, which signs in, reads the match (`sync.rejoinMatch`), and, if `meta.scorekeeperUid` is still this device's anonymous uid, sets the role back to `scorekeeper` and pushes what the server missed (`sync.resyncMatch`, planned by the pure `planPointResync`: append the missing tail, or replace the whole log if they diverged). If the device isn't the owner any more, the stale `matchId` is cleared; a network failure keeps it and offers Retry.
+
+**Spectator screen wake lock:** `SpectatorView` holds a Screen Wake Lock (`createWakeLock`, inside the tested sentinel region) so a propped-up tablet doesn't dim or lock. The browser drops the lock when the tab is hidden, so it is re-requested on `visibilitychange`. Where `navigator.wakeLock` is missing, the view tells the user to set Auto-Lock to Never. Covered by `tests/wakelock.test.mjs`.
+
+**Spectator tablet layout:** `.app` is a 480px phone column on every screen; on the spectator screen it gets `.is-spectator` (no max-width). From 600px wide the score scales with the viewport (`vw`/`vh`); in landscape at ≥900px the screen becomes two columns (`.spectator-main` scoreboard, `.spectator-side` previous sets, highlight form and list). Below 600px the phone layout is unchanged (the wrappers are `display: contents`, DOM order is restored with `order`). Scorekeeper screens are still phone-width.
 
 **Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 

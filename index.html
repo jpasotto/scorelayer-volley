@@ -240,6 +240,7 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .spectator-screen { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px; }
   .spectator-banner { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--success); }
   .spectator-banner .live-dot-bg { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; }
+  .spectator-awake { text-align: center; font-size: 11px; color: var(--text-dim, #94a3b8); margin-top: -4px; }
   .spectator-scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; padding: 16px; background: var(--surface); border-radius: 12px; }
   .spectator-team { text-align: center; }
   .spectator-team-name { font-size: 14px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
@@ -285,6 +286,28 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .spectator-prev-set-score.a-won .winner { color: var(--team-a); }
   .spectator-prev-set-score.b-won .winner { color: var(--team-b); }
   .spectator-prev-set-dash { margin: 0 6px; color: var(--text-dim); }
+  /* Spectator on tablets: .app is a 480px phone column everywhere else. */
+  .app.is-spectator { max-width: none; }
+  .spectator-main, .spectator-side { display: contents; }
+  .spectator-screen > .spectator-banner, .spectator-screen > .spectator-awake, .spectator-screen > .parent-status { order: -2; }
+  .spectator-prev-sets { order: -1; }
+  @media (min-width: 600px) {
+    .spectator-screen { padding: 20px 28px; gap: 18px; }
+    .spectator-points { font-size: min(20vw, 26vh); }
+    .spectator-team-name { font-size: clamp(16px, 3vw, 30px); }
+    .spectator-sets { font-size: clamp(14px, 2.2vw, 24px); }
+    .spectator-sep { font-size: min(8vw, 12vh); }
+    .spectator-set-label { font-size: clamp(12px, 1.8vw, 20px); }
+    .spectator-scoreboard { padding: 24px; }
+  }
+  @media (min-width: 900px) and (orientation: landscape) {
+    .spectator-screen { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); grid-auto-rows: min-content; align-content: start; column-gap: 24px; }
+    .spectator-screen > .spectator-banner, .spectator-screen > .spectator-awake, .spectator-screen > .parent-status { grid-column: 1 / -1; order: 0; }
+    .spectator-main, .spectator-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+    .spectator-prev-sets { order: 0; }
+    .spectator-points { font-size: min(18vw, 36vh); }
+    .spectator-side .parent-list { max-height: 45vh; }
+  }
 </style>
 </head>
 <body>
@@ -311,7 +334,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.8-beta";
+var APP_VERSION = "3.4.10-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -495,6 +518,74 @@ function reconnectFirebase() {
   } catch (e) {
     console.warn("Firebase reconnect failed:", e);
   }
+}
+
+// Screen Wake Lock for the spectator view: a tablet propped up courtside gets
+// no touches, so iOS/Android dim and lock it. The browser drops the lock
+// whenever the tab is hidden, so it is re-requested on every return to visible.
+// `nav`/`doc` are injected for tests; `opts.onChange(held)` reports the state.
+function createWakeLock(nav, doc, opts) {
+  var onChange = (opts && opts.onChange) || function() {};
+  var supported = !!(nav && nav.wakeLock && typeof nav.wakeLock.request === "function");
+  var wanted = false;
+  var pending = false;
+  var sentinel = null;
+  var listening = false;
+
+  function setSentinel(s) {
+    sentinel = s;
+    onChange(!!s);
+  }
+
+  function acquire() {
+    if (!supported || !wanted || pending || sentinel) return;
+    if (doc && doc.visibilityState === "hidden") return;
+    pending = true;
+    var req;
+    try { req = nav.wakeLock.request("screen"); } catch (e) { req = Promise.reject(e); }
+    Promise.resolve(req).then(function(s) {
+      pending = false;
+      if (!wanted) { try { s.release(); } catch (e) {} return; }
+      if (s.addEventListener) {
+        s.addEventListener("release", function() { if (sentinel === s) setSentinel(null); });
+      }
+      setSentinel(s);
+    }, function() {
+      // Denied (low battery, power-saving mode) or tab hidden mid-request:
+      // the next visibilitychange will try again.
+      pending = false;
+    });
+  }
+
+  function onVisibility() {
+    if (doc.visibilityState === "visible") acquire();
+  }
+
+  return {
+    supported: supported,
+    isHeld: function() { return !!sentinel; },
+    start: function() {
+      wanted = true;
+      if (!listening && doc && doc.addEventListener) {
+        doc.addEventListener("visibilitychange", onVisibility);
+        listening = true;
+      }
+      acquire();
+    },
+    stop: function() {
+      wanted = false;
+      if (listening) {
+        doc.removeEventListener("visibilitychange", onVisibility);
+        listening = false;
+      }
+      var s = sentinel;
+      if (s) {
+        sentinel = null;
+        try { s.release(); } catch (e) {}
+        onChange(false);
+      }
+    },
+  };
 }
 
 var HIGHLIGHT_PILL_MS = 8000;
@@ -2850,6 +2941,16 @@ function SpectatorView(props) {
   const [note, setNote] = useState("");
   const [tag, setTag] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [awake, setAwake] = useState(false);
+  const [awakeSupported, setAwakeSupported] = useState(true);
+
+  // Keep the screen on while spectating (courtside tablets get no touches).
+  useEffect(function() {
+    var lock = createWakeLock(navigator, document, { onChange: setAwake });
+    setAwakeSupported(lock.supported);
+    lock.start();
+    return function() { lock.stop(); };
+  }, []);
 
   var disabledReason = props.liveError ? props.liveError : (state.matchOver ? "Match ended — highlights are closed." : null);
 
@@ -2914,10 +3015,36 @@ function SpectatorView(props) {
         <div className="live-dot-bg"></div>
         Live spectator view
       </div>
+      <div className="spectator-awake">
+        {awake ? "Screen stays on while this page is open"
+          : !awakeSupported ? "This browser can't keep the screen on — set Auto-Lock to Never"
+          : ""}
+      </div>
       {props.liveError && (
         <div className="parent-status err">{props.liveError}</div>
       )}
 
+      <div className="spectator-main">
+      <div className="spectator-scoreboard">
+        <div className="spectator-team a">
+          <div className="spectator-team-name">{state.teamA || "Home"}</div>
+          <div className="spectator-points">{state.pointsA || 0}</div>
+          <div className="spectator-sets">Sets: {state.setsA || 0}</div>
+        </div>
+        <div className="spectator-sep">:</div>
+        <div className="spectator-team b">
+          <div className="spectator-team-name">{state.teamB || "Away"}</div>
+          <div className="spectator-points">{state.pointsB || 0}</div>
+          <div className="spectator-sets">Sets: {state.setsB || 0}</div>
+        </div>
+      </div>
+      <div className="spectator-set-label">
+        {connected ? setLabel : "Waiting for scorekeeper…"}
+        {state.matchOver && " · Match Over"}
+      </div>
+      </div>
+
+      <div className="spectator-side">
       {prevSets.length > 0 && (
         <div className="spectator-prev-sets">
           <div className="spectator-prev-sets-title">Previous sets</div>
@@ -2936,24 +3063,6 @@ function SpectatorView(props) {
           })}
         </div>
       )}
-
-      <div className="spectator-scoreboard">
-        <div className="spectator-team a">
-          <div className="spectator-team-name">{state.teamA || "Home"}</div>
-          <div className="spectator-points">{state.pointsA || 0}</div>
-          <div className="spectator-sets">Sets: {state.setsA || 0}</div>
-        </div>
-        <div className="spectator-sep">:</div>
-        <div className="spectator-team b">
-          <div className="spectator-team-name">{state.teamB || "Away"}</div>
-          <div className="spectator-points">{state.pointsB || 0}</div>
-          <div className="spectator-sets">Sets: {state.setsB || 0}</div>
-        </div>
-      </div>
-      <div className="spectator-set-label">
-        {connected ? setLabel : "Waiting for scorekeeper…"}
-        {state.matchOver && " · Match Over"}
-      </div>
 
       <div className="parent-form">
         {props.parentSubmitStatus && (
@@ -3083,6 +3192,7 @@ function SpectatorView(props) {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -3952,7 +4062,7 @@ function VolleyballTracker() {
   var highlightCount = state.pointLog.filter(function(p) { return p.highlight; }).length;
 
   return (
-    <div className="app">
+    <div className={"app" + (screen === SCREEN.SPECTATOR ? " is-spectator" : "")}>
       <div className="header">
         <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}>
           ScoreLayer Volley
