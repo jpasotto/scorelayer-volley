@@ -21,7 +21,7 @@ node --test tests/*.test.mjs
 
 The harness (`tests/harness.mjs`) reads `index.html`, slices the region between the `// EXPORTERS_BEGIN` and `// EXPORTERS_END` sentinel comments, and evaluates it in a `vm` context with stubbed `window`/`document`/`localStorage`/`firebase`. Exported pure functions are then imported into `tests/exports.test.mjs` (15 tests covering chapter generation, CSV escaping, SRT formatting, and time helpers).
 
-`tests/wakelock.test.mjs` covers the spectator wake-lock controller.
+`tests/wakelock.test.mjs` covers the spectator wake-lock controller; `tests/spectator.test.mjs` the set-break detection and support-card rules.
 
 `tests/livesync.test.mjs` covers the Live Share timeout/retry behaviour of `withTimeout` and `initFirebase` against a stubbed `firebase` (issue #63).
 
@@ -84,6 +84,10 @@ Live Share is built into `index.html`. With Firebase configured, a scorekeeper c
 **Spectator screen wake lock:** `SpectatorView` keeps a propped-up tablet from dimming or locking via `createWakeLock` (inside the tested sentinel region). It requests the native Screen Wake Lock and re-requests on `visibilitychange` (the browser drops it when the tab is hidden). If the native lock is missing or denied (iOS Low Power Mode, older iOS), it falls back to `createVideoKeepAwake`, a hidden silent looping 1.5 KB mp4 that iOS treats like video playback. The first tap on the page retries both (browsers may need a user gesture). The status line under the banner shows the result: green-grey "Screen stays on…" (with "(video mode)" for the fallback) or an amber warning with the rejection reason in brackets, e.g. `[NotAllowedError]`. Covered by `tests/wakelock.test.mjs`.
 
 **Spectator tablet layout:** `.app` is a 480px phone column on every screen; on the spectator screen it gets `.is-spectator` (no max-width). From 600px wide the score scales with the viewport (`vw`/`vh`); in landscape at ≥900px the screen becomes two columns (`.spectator-main` scoreboard, `.spectator-side` previous sets, highlight form and list). Below 600px the phone layout is unchanged (the wrappers are `display: contents`, DOM order is restored with `order`). Scorekeeper screens are still phone-width.
+
+**Spectator set break:** when a set ends the scoreboard mirror resets to 0-0 of the next set. `getSpectatorSetBreak` (tested sentinel region) detects that state (match started, not over, 0-0, previous set's `setWon` entry in the log; log order is irrelevant, see #67) and `SpectatorView` shows the finished set's final score with a "Set N final · Set break" label until the next point.
+
+**Spectator support card:** `SpectatorSupportCard` (inline, non-blocking, reuses `DonateBlock` with a spectator label) is shown on the parent's 3rd Firebase-confirmed highlight (`parentSubmittedCount`) and when a set break begins *while the page was watching that set* (opening the link mid-break does not prompt). Rules in the pure `spectatorSupportAllowed`: max 2 per match, silent 14 days after "Maybe later", 90 days after tapping the donate link (`localStorage` key `scorelayer_spectator_support`). The break card disappears when play resumes. Covered by `tests/spectator.test.mjs`.
 
 **Spectator URL:** `https://<host>/scorelayer-volley/?m={matchId}`. Generated client-side by the Share modal; spectators see a QR that decodes to that URL.
 

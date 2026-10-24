@@ -240,6 +240,9 @@ html, body { margin: 0; padding: 0; background: #0a0e14; }
   .spectator-screen { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px; }
   .spectator-banner { display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--success); }
   .spectator-banner .live-dot-bg { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: pulse 1.5s ease-in-out infinite; }
+  .support-card { background: var(--surface); border: 1px solid rgba(255,107,43,0.25); border-radius: 10px; padding: 16px 14px 14px; text-align: center; }
+  .support-card .donate-prompt-title { font-size: 13px; margin-bottom: 8px; }
+  .spectator-scoreboard.is-break { box-shadow: inset 0 0 0 1px rgba(255,107,43,0.4); }
   .spectator-awake.warn { color: var(--warning); }
   .spectator-awake { text-align: center; font-size: 11px; color: var(--text-dim, #94a3b8); margin-top: -4px; }
   .spectator-scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; padding: 16px; background: var(--surface); border-radius: 12px; }
@@ -336,7 +339,7 @@ var OVERLAY_STAR_SEC = 5;
 var HIGHLIGHT_RALLY_LEAD_MS = 60000;
 var LOCALSTORAGE_KEY = "scorelayer_match_autosave";
 var LOCALSTORAGE_PARENT_NAME_KEY = "scorelayer_parent_name";
-var APP_VERSION = "3.4.11-beta";
+var APP_VERSION = "3.4.12-beta";
 var DONATE_URL = "https://revolut.me/jpasotto";
 
 // --- Live Share (Firebase RTDB) ---
@@ -681,6 +684,53 @@ function createVideoKeepAwake(doc) {
       el = null;
     },
   };
+}
+
+// Spectator "support the project" card. Shown at most twice per match, on the
+// parent's 3rd confirmed highlight and when a set ends; silent for 14 days
+// after "Maybe later" and 90 days after tapping the donate link.
+var SPECTATOR_SUPPORT_HIGHLIGHT_COUNT = 3;
+var SPECTATOR_SUPPORT_MAX_PER_MATCH = 2;
+var SPECTATOR_SUPPORT_DISMISS_COOLDOWN_MS = 14 * 24 * 3600 * 1000;
+var SPECTATOR_SUPPORT_DONATED_COOLDOWN_MS = 90 * 24 * 3600 * 1000;
+var LOCALSTORAGE_SPECTATOR_SUPPORT_KEY = "scorelayer_spectator_support";
+
+// prefs: { dismissedAt?: ms, donatedAt?: ms } as stored in localStorage.
+function spectatorSupportAllowed(prefs, now, shownThisMatch) {
+  prefs = prefs || {};
+  if (shownThisMatch >= SPECTATOR_SUPPORT_MAX_PER_MATCH) return false;
+  if (prefs.donatedAt && now - prefs.donatedAt < SPECTATOR_SUPPORT_DONATED_COOLDOWN_MS) return false;
+  if (prefs.dismissedAt && now - prefs.dismissedAt < SPECTATOR_SUPPORT_DISMISS_COOLDOWN_MS) return false;
+  return true;
+}
+
+function readSpectatorSupportPrefs() {
+  try { return JSON.parse(localStorage.getItem(LOCALSTORAGE_SPECTATOR_SUPPORT_KEY) || "{}") || {}; }
+  catch (e) { return {}; }
+}
+
+function writeSpectatorSupportPref(field, now) {
+  var prefs = readSpectatorSupportPrefs();
+  prefs[field] = now;
+  try { localStorage.setItem(LOCALSTORAGE_SPECTATOR_SUPPORT_KEY, JSON.stringify(prefs)); } catch (e) {}
+}
+
+// Set break as the spectator sees it: the scoreboard mirror has already reset
+// to 0-0 of the next set, but the closing point of the finished set is still in
+// the log. Returns { setNum, scoreA, scoreB } of the set that just ended, or
+// null while a set is in play (or before the match / after it ends).
+function getSpectatorSetBreak(s) {
+  if (!s || !s.matchStarted || s.matchOver) return null;
+  if ((s.pointsA || 0) !== 0 || (s.pointsB || 0) !== 0) return null;
+  var prevSetNum = (s.currentSet || 1) - 1;
+  if (prevSetNum < 1) return null;
+  var closing = null;
+  var log = s.pointLog || [];
+  for (var i = 0; i < log.length; i++) {
+    var p = log[i];
+    if (p.setWon === true && !p.correction && p.setNum === prevSetNum) closing = p;
+  }
+  return closing ? { setNum: closing.setNum, scoreA: closing.pointsA, scoreB: closing.pointsB } : null;
 }
 
 var HIGHLIGHT_PILL_MS = 8000;
@@ -2919,11 +2969,11 @@ const { useState, useRef, useCallback, useEffect, useMemo } = React;
 
 // ─── DonateBlock ───────────────────────────────────────────────────────────
 // Shared donate UI reused in BetaModal, ManualModal, DonatePromptModal.
-function DonateBlock() {
+function DonateBlock(props) {
   return (
     <div className="donate-block">
-      <div className="donate-label">Saved some court-side editing time?</div>
-      <a className="btn-donate-revolut" href={DONATE_URL} target="_blank" rel="noopener noreferrer">
+      <div className="donate-label">{(props && props.label) || "Saved some court-side editing time?"}</div>
+      <a className="btn-donate-revolut" href={DONATE_URL} target="_blank" rel="noopener noreferrer" onClick={props && props.onDonate}>
         ☕ Buy me a coffee break — 5€ is plenty
       </a>
     </div>
@@ -3030,6 +3080,24 @@ function DonatePromptModal(props) {
   );
 }
 
+// ─── SpectatorSupportCard ──────────────────────────────────────────────────
+// Inline (non-blocking) donate card for spectators: the live score stays
+// visible, which matters for a tablet used as a courtside display.
+function SpectatorSupportCard(props) {
+  return (
+    <div className="support-card">
+      <div className="donate-prompt-title">Enjoying the live score?</div>
+      <div className="donate-prompt-msg">
+        All features are free during beta. If following the match here was useful, consider buying me a coffee — it helps keep the project going.
+      </div>
+      <DonateBlock label="Liked following the match live?" onDonate={props.onDonate} />
+      <button className="btn btn-small" style={{ marginTop: 12, width: "100%" }} onClick={props.onDismiss}>
+        Maybe later
+      </button>
+    </div>
+  );
+}
+
 function SpectatorView(props) {
   const state = props.state;
   const [name, setName] = useState(state.parentName || "");
@@ -3049,6 +3117,47 @@ function SpectatorView(props) {
   }, []);
 
   var disabledReason = props.liveError ? props.liveError : (state.matchOver ? "Match ended — highlights are closed." : null);
+
+  // Set break: show the finished set's score instead of the new set's 0-0.
+  var setBreak = getSpectatorSetBreak(state);
+
+  // Support card: { reason: "highlight" | "break" } or null.
+  const [support, setSupport] = useState(null);
+  const supportShownRef = useRef(0);
+  const liveSetRef = useRef(null);       // last set this page saw being played
+  const breakShownForRef = useRef(null); // set number whose break already prompted
+
+  function showSupport(reason) {
+    if (!spectatorSupportAllowed(readSpectatorSupportPrefs(), Date.now(), supportShownRef.current)) return;
+    supportShownRef.current++;
+    setSupport({ reason: reason });
+  }
+
+  // Parent's 3rd confirmed highlight.
+  useEffect(function() {
+    if (props.submittedCount === SPECTATOR_SUPPORT_HIGHLIGHT_COUNT) showSupport("highlight");
+  }, [props.submittedCount]);
+
+  // Set break: only when this page watched the set being played, so opening
+  // the link mid-break does not prompt straight away.
+  useEffect(function() {
+    if ((state.pointsA || 0) + (state.pointsB || 0) > 0 && !state.matchOver) liveSetRef.current = state.currentSet;
+    if (setBreak && liveSetRef.current === setBreak.setNum && breakShownForRef.current !== setBreak.setNum) {
+      breakShownForRef.current = setBreak.setNum;
+      showSupport("break");
+    }
+    // The break card belongs to the break: drop it when play resumes.
+    if (!setBreak) setSupport(function(c) { return c && c.reason === "break" ? null : c; });
+  }, [state.pointsA, state.pointsB, state.currentSet, state.matchOver, setBreak ? setBreak.setNum : null]);
+
+  function dismissSupport() {
+    writeSpectatorSupportPref("dismissedAt", Date.now());
+    setSupport(null);
+  }
+  function donateTapped() {
+    writeSpectatorSupportPref("donatedAt", Date.now());
+    setSupport(null);
+  }
 
   function makeSnapshot() {
     return {
@@ -3120,21 +3229,22 @@ function SpectatorView(props) {
       )}
 
       <div className="spectator-main">
-      <div className="spectator-scoreboard">
+      <div className={"spectator-scoreboard" + (setBreak ? " is-break" : "")}>
         <div className="spectator-team a">
           <div className="spectator-team-name">{state.teamA || "Home"}</div>
-          <div className="spectator-points">{state.pointsA || 0}</div>
+          <div className="spectator-points">{setBreak ? setBreak.scoreA : (state.pointsA || 0)}</div>
           <div className="spectator-sets">Sets: {state.setsA || 0}</div>
         </div>
         <div className="spectator-sep">:</div>
         <div className="spectator-team b">
           <div className="spectator-team-name">{state.teamB || "Away"}</div>
-          <div className="spectator-points">{state.pointsB || 0}</div>
+          <div className="spectator-points">{setBreak ? setBreak.scoreB : (state.pointsB || 0)}</div>
           <div className="spectator-sets">Sets: {state.setsB || 0}</div>
         </div>
       </div>
       <div className="spectator-set-label">
-        {connected ? setLabel : "Waiting for scorekeeper…"}
+        {setBreak ? formatSetLabel(setBreak.setNum, state.setNumberOffset || 0) + " final · Set break"
+          : connected ? setLabel : "Waiting for scorekeeper…"}
         {state.matchOver && " · Match Over"}
       </div>
       </div>
@@ -3188,6 +3298,8 @@ function SpectatorView(props) {
           <div className="share-hint" style={{ marginTop: 4 }}>Match ended. Highlights will reopen if the scorekeeper continues the match.</div>
         )}
       </div>
+
+      {support && <SpectatorSupportCard onDismiss={dismissSupport} onDonate={donateTapped} />}
 
       {modalOpen && (
         <div className="share-overlay" onClick={function() { setModalOpen(false); }}>
@@ -3444,6 +3556,7 @@ function VolleyballTracker() {
   const rejoinAttemptRef = useRef(0);
   const [parentSubmitStatus, setParentSubmitStatus] = useState(null); // { msg, isError }
   const lastParentSubmitRef = useRef(0);
+  const [parentSubmittedCount, setParentSubmittedCount] = useState(0); // confirmed by Firebase
   const [showRenameRow, setShowRenameRow] = useState(false);
 
   const prevMatchOver = useRef(false);
@@ -3803,7 +3916,7 @@ function VolleyballTracker() {
       tag: payload.tag || null,
       snapshot: payload.snapshot || null
     }).then(function(key) {
-      if (key) setParentSubmitStatus({ msg: "Submitted!", isError: false });
+      if (key) { setParentSubmitStatus({ msg: "Submitted!", isError: false }); setParentSubmittedCount(function(n) { return n + 1; }); }
       else setParentSubmitStatus({ msg: "Submission failed. Try again.", isError: true });
       setTimeout(function() { setParentSubmitStatus(null); }, 3000);
     });
@@ -4734,6 +4847,7 @@ function VolleyballTracker() {
           liveError={liveError}
           parentSubmitStatus={parentSubmitStatus}
           onSubmitHighlight={handleSubmitParentHighlight}
+          submittedCount={parentSubmittedCount}
         />
       )}
 
