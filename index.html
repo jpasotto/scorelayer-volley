@@ -2043,22 +2043,19 @@ function parseCSVToEntries(csvText, matchTitle) {
     prevPointsB = d.pointsB;
     var startSec = d.offset_ms / 1000;
     if (startSec < 0) continue;
-    // For highlights, extend start back to rally beginning (prev row's timestamp), same set only
-    if (d.highlight && j > 0 && dataRows[j - 1].setNum === d.setNum) {
-      var rallyStartSec = dataRows[j - 1].offset_ms / 1000;
-      if (rallyStartSec >= 0) {
-        startSec = rallyStartSec;
-        // Truncate previous entry's end to avoid overlap
-        if (entries.length > 0 && !entries[entries.length - 1].blank) {
-          entries[entries.length - 1].end = Math.round(startSec * 1000) / 1000;
-        }
+    // For highlights, propagate the ★ back to the previous point's score entry
+    // (same set) so the rally play is also marked. Never shift startSec or
+    // truncate the previous entry: the score shown during the rally must stay
+    // the pre-rally score (same rule as buildOverlayEntries).
+    if (d.highlight && entries.length > 0 && j > 0 && dataRows[j - 1].setNum === d.setNum) {
+      var csvPrevEntry = entries[entries.length - 1];
+      if (csvPrevEntry.type === 'score') {
+        csvPrevEntry.highlight = true;
+        csvPrevEntry.highlightNote = d.highlightNote || csvPrevEntry.highlightNote || null;
       }
     }
     var csvNextP = j < dataRows.length - 1 ? dataRows[j + 1] : null;
-    var csvNextHighlightSameSet = csvNextP && csvNextP.highlight && csvNextP.setNum === d.setNum;
-    var rawEndSec = csvNextHighlightSameSet
-      ? (d.offset_ms / 1000)
-      : (csvNextP ? csvNextP.offset_ms / 1000 : startSec + 10);
+    var rawEndSec = csvNextP ? csvNextP.offset_ms / 1000 : startSec + 10;
     var csvIsSetBreak = csvNextP && csvNextP.setNum !== d.setNum;
     var csvSetWon = isSetWon(d.pointsA, d.pointsB, getTargetPoints(setsA, setsB));
     var csvGapSec = rawEndSec - startSec;
@@ -2098,29 +2095,45 @@ function parseCSVToEntries(csvText, matchTitle) {
       });
     } else {
       var endSec = csvIsSetBreak ? (startSec + rawEndSec) / 2 : rawEndSec;
-      // A point immediately followed by a same-set highlight gets a zero-length
-      // overlay entry (its rawEndSec was pulled back to its own start so the
-      // highlight's rally can cover that slot). Skip only the empty overlay
-      // entry — the point itself must still be recorded in pointLog below, or
-      // YouTube chapters / Highlights SRT lose it and mis-place later highlights
-      // (issue: import path dropped the point before each highlight).
-      if (endSec > startSec) {
+      var csvScoreText = teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB;
+      var csvIsHl = d.highlight || false;
+      var csvHlNote = d.highlightNote || null;
+      // Same ★ cap as buildOverlayEntries (issue #51): a highlighted point's own
+      // entry is split into a lit head and an unlit tail past OVERLAY_STAR_SEC.
+      if (csvIsHl && (endSec - startSec) > OVERLAY_STAR_SEC) {
+        var csvSplitSec = startSec + OVERLAY_STAR_SEC;
+        entries.push({
+          type: 'score',
+          start: Math.round(startSec * 1000) / 1000,
+          end:   Math.round(csvSplitSec * 1000) / 1000,
+          score: csvScoreText, set_info: "Set " + d.setNum, title: title,
+          sets_score: "Sets " + setsA + ":" + setsB,
+          highlight: true, highlightNote: csvHlNote,
+        });
+        entries.push({
+          type: 'score',
+          start: Math.round(csvSplitSec * 1000) / 1000,
+          end:   Math.round(endSec      * 1000) / 1000,
+          score: csvScoreText, set_info: "Set " + d.setNum, title: title,
+          sets_score: "Sets " + setsA + ":" + setsB,
+          highlight: false, highlightNote: null,
+        });
+      } else if (endSec > startSec) {
         entries.push({
           type: 'score',
           start: Math.round(startSec * 1000) / 1000,
           end:   Math.round(endSec   * 1000) / 1000,
-          score: teamA + "  " + d.pointsA + " : " + d.pointsB + "  " + teamB,
-          set_info: "Set " + d.setNum, title: title,
+          score: csvScoreText, set_info: "Set " + d.setNum, title: title,
           sets_score: "Sets " + setsA + ":" + setsB,
-          highlight: d.highlight || false, highlightNote: d.highlightNote || null,
+          highlight: csvIsHl, highlightNote: csvHlNote,
         });
-        if (csvIsSetBreak) {
-          entries.push({
-            start: Math.round(endSec    * 1000) / 1000,
-            end:   Math.round(rawEndSec * 1000) / 1000,
-            blank: true,
-          });
-        }
+      }
+      if (csvIsSetBreak && endSec > startSec) {
+        entries.push({
+          start: Math.round(endSec    * 1000) / 1000,
+          end:   Math.round(rawEndSec * 1000) / 1000,
+          blank: true,
+        });
       }
     }
     // pointLog uses timestamp=offset_ms so generateYouTubeChapters/generateHighlightsSRT work with syncTimestamp=0

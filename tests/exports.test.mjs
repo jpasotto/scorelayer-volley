@@ -213,9 +213,9 @@ test("parseCSVToEntries: rows with neither offset nor parseable WallClock are re
 });
 
 test("parseCSVToEntries: the point immediately before a highlight is kept in pointLog (not dropped)", () => {
-  // The overlay rally-back gives that point a zero-length overlay entry; it must
-  // still land in pointLog, or imported YouTube chapters / Highlights SRT lose it
-  // and mis-place the highlight (the bug: import dropped the point before each ★).
+  // Regression guard: every imported point must land in pointLog, or imported
+  // YouTube chapters / Highlights SRT lose it and mis-place the highlight
+  // (the bug: import dropped the point before each ★).
   const csv = [
     "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
     '1,00:00:05,5000,1,1,0,0,0,A,N,N,"","T","A 1-0 B"',
@@ -563,4 +563,68 @@ test("parseCSVToEntries: normally spaced points → no warning", () => {
   const out = helpers.parseCSVToEntries(rows.join("\n"));
   assert.equal(out.error, undefined);
   assert.equal(out.timingWarning, undefined);
+});
+
+// ---------- parseCSVToEntries: ★ never shifts the score (parity with buildOverlayEntries) ----------
+
+test("parseCSVToEntries: a ★ point keeps its own start; the previous score is not swallowed, only lit", () => {
+  const csv = [
+    "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+    '1,00:00:10,10000,1,1,0,0,0,A,N,N,"","","A 1-0 B"',
+    '2,00:00:50,50000,1,2,0,0,0,A,N,N,"","","A 2-0 B"',
+    '3,00:01:30,90000,1,3,0,0,0,A,N,Y,"Spike","","A 3-0 B"',
+    '4,00:02:00,120000,1,3,1,0,0,B,N,N,"","","A 3-1 B"',
+  ].join("\n");
+  const res = helpers.parseCSVToEntries(csv);
+  assert.ok(!res.error, res.error);
+  const sc = res.entries.filter((e) => e.type === "score");
+  const e20 = sc.find((e) => e.score.includes("2 : 0"));
+  const e30 = sc.find((e) => e.score.includes("3 : 0") && e.highlight);
+  assert.equal(e20.start, 50, "2-0 keeps its own start");
+  assert.equal(e20.end, 90, "2-0 is not truncated: it shows until the 3-0 point is scored");
+  assert.equal(e20.highlight, true, "the rally entry carries the ★");
+  assert.equal(e20.highlightNote, "Spike");
+  assert.equal(e30.start, 90, "3-0 appears when the point is scored, not at rally start");
+});
+
+test("parseCSVToEntries: a ★ on the set-ending point shows the pre-set-point score until the point is scored", () => {
+  // Real case: 24-21 then ★ 25-21 ~39 s later. 25-21 must not appear at 24-21's time.
+  const csv = [
+    "Index,WallClock,VideoOffset_ms,Set,PointsA,PointsB,SetsA,SetsB,ScoringTeam,Correction,Highlight,HighlightNote,MatchTitle,ScoreDisplay",
+    '1,00:00:00,0,2,23,21,1,0,B,N,N,"","","A 23-21 B"',
+    '2,00:06:18,378000,2,24,21,1,0,A,N,N,"","","A 24-21 B"',
+    '3,00:06:57,417000,2,25,21,1,0,A,N,Y,"","","A 25-21 B"',
+    '4,00:10:52,652000,3,0,1,2,0,B,N,N,"","","A 0-1 B"',
+  ].join("\n");
+  const res = helpers.parseCSVToEntries(csv);
+  assert.ok(!res.error, res.error);
+  const e2421 = res.entries.find((e) => e.type === "score" && e.score.includes("24 : 21"));
+  assert.ok(e2421, "24-21 must be displayed (it was swallowed before)");
+  assert.equal(e2421.start, 378);
+  assert.equal(e2421.end, 417);
+  const first2521 = res.entries.find((e) => e.type === "score" && e.score.includes("25 : 21"));
+  assert.equal(first2521.start, 417, "25-21 starts at the point's own offset");
+});
+
+test("parseCSVToEntries: overlay entries match buildOverlayEntries for the same match (★ timing, star cap, set break)", () => {
+  const E = 1700000000000;
+  const mk = (off, setNum, a, b, setsA, setsB, team, hl, note) => ({
+    timestamp: E + off, wallClock: E + off, setNum, pointsA: a, pointsB: b, setsA, setsB,
+    team, correction: false, highlight: hl, highlightNote: note || "",
+    setWon: Math.max(a, b) >= 25 && Math.abs(a - b) >= 2,
+  });
+  const log = [
+    mk(10000, 1, 1, 0, 0, 0, "A", false),
+    mk(50000, 1, 2, 0, 0, 0, "A", false),
+    mk(90000, 1, 3, 0, 0, 0, "A", true, "Spike"),
+    mk(120000, 1, 3, 1, 0, 0, "B", false),
+    mk(130000, 1, 25, 1, 0, 0, "A", true),
+    mk(500000, 2, 0, 1, 1, 0, "B", false),
+    mk(540000, 2, 1, 1, 1, 0, "A", false),
+  ];
+  const csv = helpers.generateCSV(log, E, "A", "B", "", []);
+  const imported = helpers.parseCSVToEntries(csv).entries;
+  const live = helpers.buildOverlayEntries(log, E, "A", "B", "", 0, []);
+  const pick = (e) => ({ type: e.type || "blank", start: e.start, end: e.end, score: e.score, hl: !!e.highlight, note: e.highlightNote || null });
+  assert.deepEqual(imported.map(pick), live.map(pick));
 });
